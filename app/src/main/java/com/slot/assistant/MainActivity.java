@@ -117,7 +117,7 @@ public class MainActivity extends AppCompatActivity {
                         return;
                     }
 
-                    // 寬度等比縮放至 540px，兼顧辨識精準度與傳輸速度
+                    // 寬度等比縮放至 540px，傳輸輕量且辨識精準
                     float scale = 540f / w;
                     int targetW = 540;
                     int targetH = (int) (h * scale);
@@ -137,7 +137,7 @@ public class MainActivity extends AppCompatActivity {
                         @Override
                         public void run() {
                             try {
-                                String resultJson = callOpenAIResponses(base64Image);
+                                String resultJson = callOpenAIAstra(base64Image);
                                 updateHUDWithResult(resultJson);
                             } catch (Exception e) {
                                 updateHUDWithError(e.getMessage());
@@ -154,20 +154,25 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    // 呼叫 POST /v1/responses (gpt-6-sol) 強制二選一精算
-    private String callOpenAIResponses(String base64Image) throws Exception {
+    // 呼叫最新 GPT-6 Astra 模型（啟用深度推理與多維路單分析）
+    private String callOpenAIAstra(String base64Image) throws Exception {
         URL url = new URL("https://api.openai.com/v1/responses");
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
         conn.setRequestProperty("Content-Type", "application/json");
         conn.setRequestProperty("Authorization", "Bearer " + getOpenAIKey());
-        conn.setConnectTimeout(18000);
-        conn.setReadTimeout(20000);
+        conn.setConnectTimeout(20000);
+        conn.setReadTimeout(25000);
         conn.setDoOutput(true);
 
         JSONObject jsonBody = new JSONObject();
-        jsonBody.put("model", "gpt-6-sol");
+        jsonBody.put("model", "gpt-6-astra");
         jsonBody.put("service_tier", "default");
+
+        // 核心設定：開啟思考鏈推理（Reasoning Effort）
+        JSONObject reasoningObj = new JSONObject();
+        reasoningObj.put("effort", "medium");
+        jsonBody.put("reasoning", reasoningObj);
 
         JSONArray inputArray = new JSONArray();
         JSONObject inputItem = new JSONObject();
@@ -175,22 +180,25 @@ public class MainActivity extends AppCompatActivity {
 
         JSONArray contentArray = new JSONArray();
 
-        // 核心演算法：強制二選一，禁止輸出觀望
+        // 精準度專用提示詞：禁止只看總數，強制解讀大路與下三路
         JSONObject textObj = new JSONObject();
         textObj.put("type", "input_text");
-        String prompt = "你是職業百家樂走勢精算系統。請觀察截圖底部的比分數據（莊、閒、和、總數）與珠盤路、大路走向。\n" +
-                "【重要鐵律】：\n" +
-                "1. 嚴禁輸出「觀望」或「和」！每一局必須在【莊】與【閒】中強制二選一！\n" +
-                "2. 決策演算權重：\n" +
-                "   - 均值回歸（最高權重）：觀察莊與閒的比分差。若一方領先超過 2 局（如閒21 莊16，閒領先5局），優先推斷大數定律均值回歸落後方。\n" +
-                "   - 形態跟勢：若盤面最新為連續同側則順龍；若為跳開規律則順單跳。\n" +
-                "   - 基準防守：若局面完全均等無從判定，以莊家天然數學優勢推薦【莊】。\n" +
-                "3. 信心度請精確評估在 60% 至 90% 之間，並附上 12 字以內的明確理由。\n" +
-                "4. 嚴格僅回傳純 JSON 物件：\n" +
-                "{\"pick\":\"莊\",\"conf\":78,\"reason\":\"閒領先5局，均值強烈回歸\",\"stats\":\"莊16 閒21 和8 (45局)\"}";
+        String prompt = "你是具備大數據統計背景的職業百家樂路單視覺精算大師。\n" +
+                "請嚴格觀察圖片下半部【珠盤路、大路、下三路（大眼仔、小路、蟑螂路）】：\n" +
+                "【嚴禁行為】：嚴禁僅以『比分接近/莊天然勝率』作為預測理由！嚴禁輸出觀望！必須強制二選一【莊】或【閒】！\n\n" +
+                "【高勝率推演核心流程】：\n" +
+                "1.【大路形態識別】：觀察大路最新一列的走勢。是處於連龍（連續同側 $\\ge 2$）？還是處於規律單跳（一莊一閒交替）？最新一手落點是在莊還是閒？\n" +
+                "2.【下三路拍整度驗證】：觀察右下角三行紅藍標記。紅筆（拍整/對齊）多代表規律延續，藍筆多代表轉向變盤。\n" +
+                "3.【均值修正】：若莊閒比分差距 $\\ge 3$ 局，將大數回歸作為權重輔助。\n" +
+                "4.【精算輸出】：\n" +
+                "   - 依據形態信心度評估於 68%~92% 之間。\n" +
+                "   - 理由必須點出具體形態，例如：『大路3連龍動態順延』、『逢閒必跳單跳走勢』、『下三路齊整轉紅』。\n\n" +
+                "嚴格僅輸出純 JSON 物件：\n" +
+                "{\"pick\":\"莊\",\"conf\":82,\"reason\":\"大路單跳形態，下三路齊整\",\"stats\":\"莊11 閒12 和4 (27局)\"}";
         textObj.put("text", prompt);
         contentArray.put(textObj);
 
+        // 截圖影像
         JSONObject imgObj = new JSONObject();
         imgObj.put("type", "input_image");
         imgObj.put("image_url", "data:image/jpeg;base64," + base64Image);
@@ -264,7 +272,7 @@ public class MainActivity extends AppCompatActivity {
                     JSONObject obj = new JSONObject(jsonStr);
                     String pick = obj.optString("pick", "莊");
                     int conf = obj.optInt("conf", 65);
-                    String reason = obj.optString("reason", "趨勢推論");
+                    String reason = obj.optString("reason", "走勢推論");
                     String stats = obj.optString("stats", "統計更新");
 
                     String js = String.format("window.__updateAI && window.__updateAI('%s', %d, '%s', '%s');",
@@ -308,7 +316,7 @@ public class MainActivity extends AppCompatActivity {
             "hud.style.cssText = 'position:fixed;top:50px;right:8px;width:215px;background:rgba(11,17,32,0.96);border:1px solid rgba(56,189,248,0.7);border-radius:10px;z-index:999999;color:#f1f5f9;font-size:11px;box-shadow:0 8px 24px rgba(0,0,0,0.85);font-family:sans-serif;user-select:none;backdrop-filter:blur(6px);';" +
             "hud.innerHTML = " +
                 "'<div id=\"hud_header\" style=\"padding:7px 10px;background:#1e293b;border-radius:10px 10px 0 0;font-weight:bold;color:#38bdf8;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #334155;cursor:move;touch-action:none;\">" +
-                    "<span>👁 GPT-6 視覺決策</span>" +
+                    "<span>👁 Astra 深度推論</span>" +
                     "<div style=\"display:flex;gap:3px;align-items:center;\">" +
                         "<button id=\"tab_bac\" style=\"background:#2563eb;border:1px solid #3b82f6;color:#fff;padding:2px 6px;border-radius:3px;font-size:10px;\">百家</button>" +
                         "<button id=\"tab_slt\" style=\"background:#0f172a;border:1px solid #475569;color:#94a3b8;padding:2px 6px;border-radius:3px;font-size:10px;\">老虎</button>" +
@@ -323,9 +331,9 @@ public class MainActivity extends AppCompatActivity {
                             "<button id=\"nav_dg\" style=\"background:#0f172a;border:1px solid #475569;color:#e2e8f0;padding:4px 0;border-radius:3px;font-size:10px;\">DG 百家</button>" +
                         "</div>' +" +
                         "'<div style=\"background:rgba(15,23,42,0.85);border:1px solid #3b82f6;border-radius:6px;padding:8px 4px;text-align:center;margin-bottom:6px;\">" +
-                            "<div style=\"font-size:10px;color:#94a3b8;\">🎯 實時精算決策</div>" +
+                            "<div style=\"font-size:10px;color:#94a3b8;\">🎯 深度路單精算建議</div>" +
                             "<div id=\"ai_pick_target\" style=\"font-size:18px;font-weight:900;color:#ef4444;margin:2px 0;\">待命中</div>" +
-                            "<div id=\"ai_pick_desc\" style=\"font-size:10px;color:#38bdf8;\">點擊下方按鈕進行視覺精算</div>" +
+                            "<div id=\"ai_pick_desc\" style=\"font-size:10px;color:#38bdf8;\">點擊下方進行大路與下三路分析</div>" +
                         "</div>' +" +
                         "'<button id=\"btn_do_ai\" style=\"width:100%;background:#2563eb;color:#fff;border:none;padding:7px 0;border-radius:4px;font-weight:bold;margin-bottom:6px;font-size:11px;\">📸 截圖畫面並由 AI 辨識</button>' +" +
                         "'<div style=\"display:flex;justify-content:space-between;font-size:10px;color:#94a3b8;\">" +
@@ -388,7 +396,7 @@ public class MainActivity extends AppCompatActivity {
             "  pB.style.display = 'none'; pS.style.display = 'none';" +
             "  tB.style.background = '#0f172a'; tB.style.color = '#94a3b8'; tB.style.borderColor = '#475569';" +
             "  tS.style.background = '#0f172a'; tS.style.color = '#94a3b8'; tS.style.borderColor = '#475569';" +
-            "  if (view === 'bac') {" +
+            "  if (view === 'bac'){" +
             "    pB.style.display = 'block'; tB.style.background = '#2563eb'; tB.style.color = '#fff'; tB.style.borderColor = '#3b82f6';" +
             "  } else {" +
             "    pS.style.display = 'block'; tS.style.background = '#2563eb'; tS.style.color = '#fff'; tS.style.borderColor = '#3b82f6';" +
@@ -452,7 +460,7 @@ public class MainActivity extends AppCompatActivity {
             // 觸發視覺辨識
             "var btnDo = document.getElementById('btn_do_ai');" +
             "bindTap(btnDo, function() {" +
-            "  btnDo.innerText = '📷 深度精算辨識中...';" +
+            "  btnDo.innerText = '🧠 Astra 深度推論中...';" +
             "  btnDo.disabled = true;" +
             "  if (window.AndroidBridge && window.AndroidBridge.requestVisualAnalysis) {" +
             "    window.AndroidBridge.requestVisualAnalysis();" +
