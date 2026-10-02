@@ -17,7 +17,6 @@ jobs:
         run: |
           mkdir -p Payload/SlotAssistant.app
 
-          # 使用 Apple 原生 SDK 編譯 Swift 程式碼
           SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
           xcrun --sdk iphoneos swiftc \
             -target arm64-apple-ios15.0 \
@@ -29,13 +28,8 @@ jobs:
             ios/ViewController.swift \
             -o Payload/SlotAssistant.app/SlotAssistant
 
-          # 複製設定檔
           cp ios/Info.plist Payload/SlotAssistant.app/Info.plist
-
-          # 產生 Ad-hoc 本地簽名
           codesign -s - --force Payload/SlotAssistant.app
-
-          # 打包為 .ipa 檔案
           zip -r SlotAssistant.ipa Payload
 
       - name: Upload IPA Artifact
