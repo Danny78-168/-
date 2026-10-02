@@ -78,13 +78,14 @@ public class MainActivity extends AppCompatActivity {
                     @Override
                     public void run() {
                         webView.loadUrl(targetUrl);
+                        webView.evaluateJavascript("window.location.href = '" + targetUrl + "';", null);
                     }
                 });
             }
 
             @JavascriptInterface
-            public void requestVisualAnalysis() {
-                captureAndAnalyze();
+            public void requestVisualAnalysis(final String platform) {
+                captureAndAnalyze(platform);
             }
         }, "AndroidBridge");
 
@@ -102,7 +103,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     // 原生畫布截圖
-    private void captureAndAnalyze() {
+    private void captureAndAnalyze(final String platform) {
         if (isAnalyzing) return;
         isAnalyzing = true;
 
@@ -138,7 +139,7 @@ public class MainActivity extends AppCompatActivity {
                         @Override
                         public void run() {
                             try {
-                                String resultJson = callOpenAIAstra(base64Image);
+                                String resultJson = callOpenAIAstra(base64Image, platform);
                                 updateHUDWithResult(resultJson);
                             } catch (Exception e) {
                                 updateHUDWithError(e.getMessage());
@@ -155,8 +156,8 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    // 呼叫最新 GPT-6 Astra 模型（啟用深度推理與多維路單分析）
-    private String callOpenAIAstra(String base64Image) throws Exception {
+    // 呼叫最新 GPT-6 Astra 模型（支援 MT 與 DG 雙平台識別）
+    private String callOpenAIAstra(String base64Image, String platform) throws Exception {
         URL url = new URL("https://api.openai.com/v1/responses");
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
@@ -181,21 +182,22 @@ public class MainActivity extends AppCompatActivity {
 
         JSONArray contentArray = new JSONArray();
 
-        // 精準度專用提示詞：禁止只看總數，強制解讀大路與下三路
+        // 雙軌提示詞：融合 MT 與 DG 雙平台特徵
         JSONObject textObj = new JSONObject();
         textObj.put("type", "input_text");
-        String prompt = "你是具備大數據統計背景的職業百家樂路單視覺精算大師。\n" +
-                "請嚴格觀察圖片下半部【珠盤路、大路、下三路（大眼仔、小路、蟑螂路）】：\n" +
-                "【嚴禁行為】：嚴禁僅以『比分接近/莊天然勝率』作為預測理由！嚴禁輸出觀望！必須強制二選一【莊】或【閒】！\n\n" +
+        String prompt = "你是頂尖百家樂視覺精算系統，當前分析平台提示為【" + platform.toUpperCase() + " 百家】。\n" +
+                "請嚴格觀察圖片下半部的路單與比分：\n" +
+                "【平台特徵與數據讀取】：\n" +
+                "1. DG 百家模式：底欄比分為簡體【庄 XX 闲 XX 和 XX 庄对 X 闲对 X 总 XX】（右下角帶有庄问路/闲问路按鈕）。\n" +
+                "2. MT 百家模式：底欄比分為繁體【莊 XX 閒 XX 和 XX 莊對 X 閒對 X 總數 XX】。\n" +
+                "請精確識別當前底欄的莊、閒、和比分與總局數。\n\n" +
                 "【高勝率推演核心流程】：\n" +
-                "1.【大路形態識別】：觀察大路最新一列的走勢。是處於連龍（連續同側 >= 2）？還是處於規律單跳（一莊一閒交替）？最新一手落點是在莊還是閒？\n" +
-                "2.【下三路拍整度驗證】：觀察右下角三行紅藍標記。紅筆（拍整/對齊）多代表規律延續，藍筆多代表轉向變盤。\n" +
-                "3.【均值修正】：若莊閒比分差距 >= 3 局，將大數回歸作為權重輔助。\n" +
-                "4.【精算輸出】：\n" +
-                "   - 依據形態信心度評估於 68%~92% 之間。\n" +
-                "   - 理由必須點出具體形態，例如：『大路3連龍動態順延』、『逢閒必跳單跳走勢』、『下三路齊整轉紅』。\n\n" +
+                "1.【大路形態識別】：觀察最新一列走勢，是處於連龍（同側 >= 2）還是規律單跳（一莊一閒跳開）？\n" +
+                "2.【下三路齊整度】：觀察右側大眼仔、小路、蟑螂路紅藍走向（紅筆代表拍整順勢，藍筆代表變盤跳開）。\n" +
+                "3.【均值回歸】：若比分差距 >= 3 局，結合大數定律提供反向補位權重。\n" +
+                "4.【決策鐵律】：嚴禁輸出觀望！必須強制在【莊】與【閒】中二選一，信心度評估於 68%~92% 之間。\n\n" +
                 "嚴格僅輸出純 JSON 物件：\n" +
-                "{\"pick\":\"莊\",\"conf\":82,\"reason\":\"大路單跳形態，下三路齊整\",\"stats\":\"莊11 閒12 和4 (27局)\"}";
+                "{\"pick\":\"莊\",\"conf\":82,\"reason\":\"大路單跳形態，下三路齊整\",\"stats\":\"庄13 闲7 和2 (22局)\"}";
         textObj.put("text", prompt);
         contentArray.put(textObj);
 
@@ -300,6 +302,14 @@ public class MainActivity extends AppCompatActivity {
         String js = "javascript:(function() {" +
             "if (document.getElementById('slot-assistant-hud')) return;" +
 
+            // 表單失焦自動觸發 Vue 狀態同步
+            "document.addEventListener('focusout', function(e) {" +
+            "  if (e.target && e.target.tagName === 'INPUT') {" +
+            "    e.target.dispatchEvent(new Event('input', { bubbles: true }));" +
+            "    e.target.dispatchEvent(new Event('change', { bubbles: true }));" +
+            "  }" +
+            "}, true);" +
+
             "function bindTap(el, fn) {" +
             "  if (!el) return;" +
             "  var moved = false;" +
@@ -312,6 +322,8 @@ public class MainActivity extends AppCompatActivity {
             "  el.addEventListener('click', function(e) { e.stopPropagation(); fn(); });" +
             "}" +
 
+            "var curPlatform = 'mt';" + // 當前識別模式：mt 或 dg
+
             "var hud = document.createElement('div');" +
             "hud.id = 'slot-assistant-hud';" +
             "hud.style.cssText = 'position:fixed;top:50px;right:8px;width:205px;background:rgba(11,17,32,0.96);border:1px solid rgba(56,189,248,0.7);border-radius:10px;z-index:999999;color:#f1f5f9;font-size:11px;box-shadow:0 8px 24px rgba(0,0,0,0.85);font-family:sans-serif;user-select:none;backdrop-filter:blur(6px);';" +
@@ -321,9 +333,10 @@ public class MainActivity extends AppCompatActivity {
                     "<span id=\"hud_tog\" style=\"cursor:pointer;color:#94a3b8;font-size:10px;margin-left:3px;\">[收]</span>" +
                 "</div>' +" +
                 "'<div id=\"hud_content\" style=\"padding:10px;\">' +" +
+                    // 平台切換按鈕
                     "'<div style=\"display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:6px;\">" +
-                        "<button id=\"nav_mt\" style=\"background:#0f172a;border:1px solid #38bdf8;color:#38bdf8;padding:4px 0;border-radius:3px;font-size:10px;font-weight:bold;\">MT 百家</button>" +
-                        "<button id=\"nav_dg\" style=\"background:#0f172a;border:1px solid #475569;color:#e2e8f0;padding:4px 0;border-radius:3px;font-size:10px;\">DG 百家</button>" +
+                        "<button id=\"nav_mt\" style=\"background:#2563eb;border:1px solid #38bdf8;color:#fff;padding:4px 0;border-radius:3px;font-size:10px;font-weight:bold;\">MT 百家</button>" +
+                        "<button id=\"nav_dg\" style=\"background:#0f172a;border:1px solid #475569;color:#94a3b8;padding:4px 0;border-radius:3px;font-size:10px;\">DG 百家</button>" +
                     "</div>' +" +
                     "'<div style=\"background:rgba(15,23,42,0.85);border:1px solid #3b82f6;border-radius:6px;padding:8px 4px;text-align:center;margin-bottom:6px;\">" +
                         "<div style=\"font-size:10px;color:#94a3b8;\">🎯 深度路單精算建議</div>" +
@@ -368,39 +381,54 @@ public class MainActivity extends AppCompatActivity {
             "  else { cnt.style.display = 'none'; tog.innerText = '[展]'; }" +
             "});" +
 
-            // 快捷換台
-            "function safeNav(url) {" +
-            "  if (location.href === url) return;" +
-            "  if (window.AndroidBridge && window.AndroidBridge.switchGame) window.AndroidBridge.switchGame(url);" +
-            "  else location.href = url;" +
+            // 雙平台切換與高亮樣式聯動
+            "var btnMt = document.getElementById('nav_mt');" +
+            "var btnDg = document.getElementById('nav_dg');" +
+            "function setPlatformUI(plat) {" +
+            "  curPlatform = plat;" +
+            "  if (plat === 'mt') {" +
+            "    btnMt.style.background = '#2563eb'; btnMt.style.borderColor = '#38bdf8'; btnMt.style.color = '#fff';" +
+            "    btnDg.style.background = '#0f172a'; btnDg.style.borderColor = '#475569'; btnDg.style.color = '#94a3b8';" +
+            "  } else {" +
+            "    btnDg.style.background = '#2563eb'; btnDg.style.borderColor = '#38bdf8'; btnDg.style.color = '#fff';" +
+            "    btnMt.style.background = '#0f172a'; btnMt.style.borderColor = '#475569'; btnMt.style.color = '#94a3b8';" +
+            "  }" +
             "}" +
-            "bindTap(document.getElementById('nav_mt'), function() { safeNav('https://osc188.com/#/game/play?game_name=meta_all&game_type=3&device=mobile'); });" +
-            "bindTap(document.getElementById('nav_dg'), function() { safeNav('https://osc188.com/#/game/play?game_name=dg&game_type=3&device=mobile'); });" +
+            "function safeNav(url, plat) {" +
+            "  setPlatformUI(plat);" +
+            "  try { window.location.href = url; } catch(e) {}" +
+            "  if (window.AndroidBridge && window.AndroidBridge.switchGame) {" +
+            "    window.AndroidBridge.switchGame(url);" +
+            "  }" +
+            "}" +
+            "bindTap(btnMt, function() { safeNav('https://www.osc169.com/#/game/play?game_name=meta_all&game_type=3&device=mobile', 'mt'); });" +
+            "bindTap(btnDg, function() { safeNav('https://www.osc169.com/#/game/play?game_name=dg&game_type=3&device=mobile', 'dg'); });" +
 
-            // 觸發視覺辨識
+            // 觸發視覺辨識（攜帶當前平台）
             "var btnDo = document.getElementById('btn_do_ai');" +
             "bindTap(btnDo, function() {" +
             "  btnDo.innerText = '🧠 Astra 深度推論中...';" +
             "  btnDo.disabled = true;" +
             "  if (window.AndroidBridge && window.AndroidBridge.requestVisualAnalysis) {" +
-            "    window.AndroidBridge.requestVisualAnalysis();" +
+            "    window.AndroidBridge.requestVisualAnalysis(curPlatform);" +
             "  }" +
             "});" +
 
-            // 背景自動感應底欄更新路單
+            // 背景自動感應底欄更新路單（同時支援 MT 的『總數』與 DG 的『总』）
             "var lastTot = -1;" +
             "function scanLocalData() {" +
             "  try {" +
             "    var raw = document.body ? (document.body.innerText || '') : '';" +
             "    try {" +
-            "      var ifrs = document.querySelectorAll('iframe');" +
+            "      var ifrs = document.querySelectorAll('iframe')" +
             "      for (var k = 0; k < ifrs.length; k++) {" +
             "        var d = ifrs[k].contentDocument || ifrs[k].contentWindow.document;" +
             "        if (d && d.body) raw += ' ' + d.body.innerText;" +
             "      }" +
             "    } catch(e) {}" +
             "    if (!raw) return;" +
-            "    var r = /(?:莊|庄)\\s*(\\d{1,3})[\\s\\S]{1,40}?(?:閒|闲)\\s*(\\d{1,3})[\\s\\S]{1,40}?(?:和)\\s*(\\d{1,3})[\\s\\S]{1,60}?(?:總數|总数|局數|局数)\\s*(\\d{1,3})/g;" +
+            // 正則涵蓋：莊/庄、閒/闲、總數/总数/局數/总
+            "    var r = /(?:莊|庄)\\s*(\\d{1,3})[\\s\\S]{1,40}?(?:閒|闲)\\s*(\\d{1,3})[\\s\\S]{1,40}?(?:和)\\s*(\\d{1,3})[\\s\\S]{1,60}?(?:總數|总数|局數|局数|总)\\s*(\\d{1,3})/g;" +
             "    var m;" +
             "    while ((m = r.exec(raw)) !== null) {" +
             "      var b = parseInt(m[1], 10), p = parseInt(m[2], 10), t = parseInt(m[3], 10), tot = parseInt(m[4], 10);" +
@@ -408,7 +436,7 @@ public class MainActivity extends AppCompatActivity {
             "        if (tot !== lastTot) {" +
             "          lastTot = tot;" +
             "          var sElem = document.getElementById('hud_score');" +
-            "          if (sElem) sElem.innerText = '莊' + b + ' 閒' + p + ' 和' + t + ' (' + tot + '局)';" +
+            "          if (sElem) sElem.innerText = '庄' + b + ' 闲' + p + ' 和' + t + ' (' + tot + '局)';" +
             "        }" +
             "        break;" +
             "      }" +
@@ -425,7 +453,7 @@ public class MainActivity extends AppCompatActivity {
             "  var s = document.getElementById('hud_score');" +
             "  if (t) {" +
             "    t.innerText = '【' + pick + '】 ' + conf + '%';" +
-            "    t.style.color = (pick === '莊') ? '#ef4444' : '#3b82f6';" +
+            "    t.style.color = (pick === '莊' || pick === '庄') ? '#ef4444' : '#3b82f6';" +
             "  }" +
             "  if (d) d.innerText = reason;" +
             "  if (s) s.innerText = stats;" +
