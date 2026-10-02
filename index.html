@@ -3,76 +3,391 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>蒙地卡羅</title>
+  <title>消除型老虎機全功能分析與模擬系統</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; margin: 20px; background: #0f172a; color: #f8fafc; }
-    .container { max-width: 900px; margin: 0 auto; }
-    .card { background: #1e293b; padding: 20px; border-radius: 10px; margin-bottom: 20px; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3); }
-    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 15px; margin-bottom: 15px; }
-    label { font-size: 0.85rem; color: #94a3b8; display: block; margin-bottom: 5px; }
-    input { width: 100%; padding: 8px 12px; background: #334155; border: 1px solid #475569; border-radius: 6px; color: #fff; box-sizing: border-box; }
-    button { background: #3b82f6; color: white; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: bold; width: 100%; }
-    button:hover { background: #2563eb; }
-    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px; margin-top: 15px; }
-    .stat-item { background: #0f172a; padding: 12px; border-radius: 6px; }
-    .stat-val { font-size: 1.25rem; font-weight: bold; color: #38bdf8; margin-top: 4px; }
-    canvas { background: #0f172a; border-radius: 8px; padding: 10px; margin-top: 15px; }
+    :root {
+      --bg: #090d16;
+      --card-bg: #131c2e;
+      --card-inner: #0d1424;
+      --border: #23304a;
+      --accent-blue: #38bdf8;
+      --accent-green: #4ade80;
+      --accent-red: #f87171;
+      --accent-yellow: #facc15;
+      --text-main: #f1f5f9;
+      --text-muted: #94a3b8;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text-main);
+      margin: 0;
+      padding: 24px 16px;
+    }
+    .container {
+      max-width: 960px;
+      margin: 0 auto;
+    }
+    .header-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--accent-blue);
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .tabs {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 10px;
+    }
+    .tab-btn {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 10px 18px;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .tab-btn.active {
+      background: #2563eb;
+      color: #fff;
+      border-color: #2563eb;
+    }
+    .tab-content {
+      display: none;
+    }
+    .tab-content.active {
+      display: block;
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 24px;
+      margin-bottom: 24px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.4);
+    }
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .grid-4 {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+      gap: 14px;
+      margin-bottom: 20px;
+    }
+    label {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      display: block;
+      margin-bottom: 6px;
+    }
+    input {
+      width: 100%;
+      padding: 10px 14px;
+      background: var(--card-inner);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--accent-blue);
+      font-size: 1rem;
+      font-weight: 600;
+      box-sizing: border-box;
+    }
+    button.action-btn {
+      width: 100%;
+      padding: 12px;
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      border: none;
+      border-radius: 8px;
+      color: white;
+      font-weight: 700;
+      font-size: 0.95rem;
+      cursor: pointer;
+      transition: opacity 0.2s;
+    }
+    button.action-btn:hover {
+      opacity: 0.9;
+    }
+    .kpi-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      margin: 20px 0;
+    }
+    .kpi-box {
+      background: var(--card-inner);
+      border: 1px solid var(--border);
+      padding: 14px;
+      border-radius: 8px;
+      text-align: center;
+    }
+    .kpi-label {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      margin-bottom: 4px;
+    }
+    .kpi-num {
+      font-size: 1.35rem;
+      font-weight: 700;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 15px;
+      font-size: 0.85rem;
+    }
+    th, td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    th {
+      color: var(--text-muted);
+    }
+    .sim-result-box {
+      background: var(--card-inner);
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      margin-top: 15px;
+      text-align: center;
+      display: none;
+    }
+    canvas {
+      background: var(--card-inner);
+      border-radius: 8px;
+      padding: 10px;
+      margin-top: 20px;
+    }
   </style>
 </head>
 <body>
+
 <div class="container">
-  <h2>🎰 消除型機台資金流向模擬器 (RTP 96%)</h2>
-  
-  <div class="card">
-    <div class="grid">
-      <div>
-        <label>初始資金 ($)</label>
-        <input type="number" id="bankroll" value="0.95" step="0.05">
+  <div class="header-title">🎰 老虎機數學模型與即時評估系統</div>
+
+  <div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('bonus')">購買免遊預計得分 (Bonus Buy)</button>
+    <button class="tab-btn" onclick="switchTab('spins')">旋轉蒙地卡羅模擬 (Spins MC)</button>
+  </div>
+
+  <!-- 模組一：購買免遊即時評估 -->
+  <div id="bonusTab" class="tab-content active">
+    <div class="card">
+      <div class="grid-2">
+        <div>
+          <label>基礎單注額 (Base Bet $)</label>
+          <input type="number" id="bbBaseBet" value="0.10" step="0.05" oninput="updateBonusBuyEV()">
+        </div>
+        <div>
+          <label>購買倍數 (Cost Multiplier, 預設 100x)</label>
+          <input type="number" id="bbCostMult" value="100" step="10" oninput="updateBonusBuyEV()">
+        </div>
       </div>
-      <div>
-        <label>單注金額 ($)</label>
-        <input type="number" id="bet" value="0.10" step="0.01">
+
+      <div class="kpi-row">
+        <div class="kpi-box">
+          <div class="kpi-label">購買成本 (Cost)</div>
+          <div class="kpi-num" id="bbCostVal">$10.00</div>
+        </div>
+        <div class="kpi-box">
+          <div class="kpi-label">理論預計得分 (EV, 96.5% RTP)</div>
+          <div class="kpi-num" style="color: var(--accent-green);" id="bbEVVal">$9.65</div>
+        </div>
+        <div class="kpi-box">
+          <div class="kpi-label">最常出現中位數 (Median)</div>
+          <div class="kpi-num" style="color: var(--accent-yellow);" id="bbMedianVal">$4.20</div>
+        </div>
       </div>
-      <div>
-        <label>止盈門檻 ($)</label>
-        <input type="number" id="tp" value="2.00" step="0.10">
+
+      <table>
+        <thead>
+          <tr>
+            <th>各倍數區間</th>
+            <th>基礎注碼倍數</th>
+            <th>觸發機率</th>
+            <th>換算結算金額</th>
+          </tr>
+        </thead>
+        <tbody id="bbTableBody"></tbody>
+      </table>
+
+      <div style="margin-top: 20px;">
+        <button class="action-btn" onclick="runSingleBonusSimulation()">🎲 即時模擬一局免費遊戲結算</button>
       </div>
-      <div>
-        <label>止損門檻 ($)</label>
-        <input type="number" id="sl" value="0.30" step="0.05">
+
+      <div class="sim-result-box" id="bbSimBox">
+        <div style="font-size: 0.85rem; color: var(--text-muted);" id="bbSimTier">結算類型</div>
+        <div style="font-size: 2rem; font-weight: 800; margin: 6px 0;" id="bbSimAmount">$0.00</div>
+        <div style="font-size: 0.85rem;" id="bbSimROI">0.00x</div>
       </div>
     </div>
-    <button onclick="runSimulation()">開始執行 10,000 次蒙地卡羅模擬</button>
+  </div>
 
-    <div class="stats" id="results" style="display:none;">
-      <div class="stat-item"><div>止盈率 (Take Profit)</div><div class="stat-val" id="tpRate">0%</div></div>
-      <div class="stat-item"><div>止損率 (Stop Loss)</div><div class="stat-val" id="slRate">0%</div></div>
-      <div class="stat-item"><div>直接破產率 (Bust)</div><div class="stat-val" id="bustRate" style="color:#f87171;">0%</div></div>
-      <div class="stat-item"><div>平均存活轉數</div><div class="stat-val" id="avgSpins">0</div></div>
+  <!-- 模組二：常規旋轉蒙地卡羅模擬 -->
+  <div id="spinsTab" class="tab-content">
+    <div class="card">
+      <div class="grid-4">
+        <div>
+          <label>初始資金 ($)</label>
+          <input type="number" id="mcBankroll" value="0.95" step="0.05">
+        </div>
+        <div>
+          <label>單注金額 ($)</label>
+          <input type="number" id="mcBet" value="0.10" step="0.01">
+        </div>
+        <div>
+          <label>止盈門檻 ($)</label>
+          <input type="number" id="mcTP" value="2.00" step="0.10">
+        </div>
+        <div>
+          <label>止損門檻 ($)</label>
+          <input type="number" id="mcSL" value="0.30" step="0.05">
+        </div>
+      </div>
+
+      <button class="action-btn" onclick="runMonteCarloSpins()">🚀 開始執行 10,000 次蒙地卡羅運算</button>
+
+      <div class="kpi-row" id="mcResultCards" style="display: none;">
+        <div class="kpi-box">
+          <div class="kpi-label">止盈率 (Take Profit)</div>
+          <div class="kpi-num" style="color: var(--accent-green);" id="mcTPRate">0%</div>
+        </div>
+        <div class="kpi-box">
+          <div class="kpi-label">止損率 (Stop Loss)</div>
+          <div class="kpi-num" style="color: var(--accent-yellow);" id="mcSLRate">0%</div>
+        </div>
+        <div class="kpi-box">
+          <div class="kpi-label">直接破產率 (Bust)</div>
+          <div class="kpi-num" style="color: var(--accent-red);" id="mcBustRate">0%</div>
+        </div>
+        <div class="kpi-box">
+          <div class="kpi-label">平均存活轉數</div>
+          <div class="kpi-num" style="color: var(--accent-blue);" id="mcAvgSpins">0 轉</div>
+        </div>
+      </div>
+
+      <canvas id="mcChart" height="130"></canvas>
     </div>
-
-    <canvas id="chartCanvas" height="120"></canvas>
   </div>
 </div>
 
 <script>
+// ==================== 模組切換 ====================
+function switchTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(tc => tc.classList.remove('active'));
+  if (tab === 'bonus') {
+    document.querySelector('.tab-btn:nth-child(1)').classList.add('active');
+    document.getElementById('bonusTab').classList.add('active');
+  } else {
+    document.querySelector('.tab-btn:nth-child(2)').classList.add('active');
+    document.getElementById('spinsTab').classList.add('active');
+  }
+}
+
+// ==================== 模組一：購買免遊計算與模擬 ====================
+const bonusTiers = [
+  { label: "極低谷局 (未連消)", min: 2,   max: 20,   prob: 0.25 },
+  { label: "偏弱局 (低階連消)", min: 20,  max: 60,   prob: 0.35 },
+  { label: "保本徘徊區間",     min: 60,  max: 100,  prob: 0.15 },
+  { label: "翻倍獲利局",       min: 100, max: 250,  prob: 0.17 },
+  { label: "暴擊大獎局",       min: 250, max: 600,  prob: 0.065 },
+  { label: "全屏神級爆分",     min: 600, max: 2500, prob: 0.015 }
+];
+
+function updateBonusBuyEV() {
+  const bet = parseFloat(document.getElementById('bbBaseBet').value) || 0;
+  const costMult = parseFloat(document.getElementById('bbCostMult').value) || 100;
+  const cost = bet * costMult;
+  
+  // 數學期望值 (EV)：RTP 96.5%
+  const ev = cost * 0.965;
+  // 中位數：典型消除機台約落在 42x 注額
+  const median = bet * 42;
+
+  document.getElementById('bbCostVal').innerText = `$${cost.toFixed(2)}`;
+  document.getElementById('bbEVVal').innerText = `$${ev.toFixed(2)}`;
+  document.getElementById('bbMedianVal').innerText = `$${median.toFixed(2)}`;
+
+  const tbody = document.getElementById('bbTableBody');
+  tbody.innerHTML = '';
+  bonusTiers.forEach(t => {
+    const minVal = (bet * t.min).toFixed(2);
+    const maxVal = (bet * t.max).toFixed(2);
+    const row = document.createElement('tr');
+    row.innerHTML = `
+      <td style="color: ${t.min >= costMult ? '#4ade80' : '#94a3b8'}">${t.label}</td>
+      <td>${t.min}x - ${t.max}x</td>
+      <td>${(t.prob * 100).toFixed(1)}%</td>
+      <td>$${minVal} ~ $${maxVal}</td>
+    `;
+    tbody.appendChild(row);
+  });
+}
+
+function runSingleBonusSimulation() {
+  const bet = parseFloat(document.getElementById('bbBaseBet').value) || 0;
+  const costMult = parseFloat(document.getElementById('bbCostMult').value) || 100;
+  const cost = bet * costMult;
+
+  const r = Math.random();
+  let acc = 0;
+  let selected = bonusTiers[0];
+
+  for (let t of bonusTiers) {
+    acc += t.prob;
+    if (r <= acc) {
+      selected = t;
+      break;
+    }
+  }
+
+  // 區間內模擬（指數權重偏向區間左側）
+  const mult = selected.min + (selected.max - selected.min) * Math.pow(Math.random(), 1.6);
+  const payout = mult * bet;
+  const roi = (payout - cost) / cost * 100;
+
+  const simBox = document.getElementById('bbSimBox');
+  simBox.style.display = 'block';
+  document.getElementById('bbSimTier').innerText = `開出區間：${selected.label}`;
+  
+  const amtElem = document.getElementById('bbSimAmount');
+  amtElem.innerText = `$${payout.toFixed(2)}`;
+  amtElem.style.color = payout >= cost ? 'var(--accent-green)' : 'var(--accent-red)';
+
+  const roiElem = document.getElementById('bbSimROI');
+  roiElem.innerText = `${mult.toFixed(1)}x 基礎注 | 投報率: ${roi >= 0 ? '+' : ''}${roi.toFixed(1)}%`;
+  roiElem.style.color = roi >= 0 ? 'var(--accent-green)' : 'var(--accent-red)';
+}
+
+// ==================== 模組二：常規旋轉蒙地卡羅 (10,000次) ====================
 let chartInstance = null;
 
-function runSimulation() {
-  const bankroll = parseFloat(document.getElementById('bankroll').value);
-  const bet = parseFloat(document.getElementById('bet').value);
-  const tp = parseFloat(document.getElementById('tp').value);
-  const sl = parseFloat(document.getElementById('sl').value);
+function runMonteCarloSpins() {
+  const bankroll = parseFloat(document.getElementById('mcBankroll').value);
+  const bet = parseFloat(document.getElementById('mcBet').value);
+  const tp = parseFloat(document.getElementById('mcTP').value);
+  const sl = parseFloat(document.getElementById('mcSL').value);
   const maxSpins = 100;
   const sims = 10000;
 
-  // 離散倍數與累積機率
-  const outcomes = [0.0, 0.5, 1.5, 5.0, 25.0, 105.0];
-  const cdf = [0.732, 0.882, 0.952, 0.985, 0.997, 1.000];
+  // 典型消除機台單轉倍數與累積機率分佈 (加權 EV = 0.96，即 96% RTP)
+  const outcomes = [0.0,   0.5,   1.5,   5.0,   25.0,  105.0];
+  const cdf      = [0.732, 0.882, 0.952, 0.985, 0.997, 1.000];
 
   let busts = 0, tps = 0, sls = 0, totalSpins = 0;
-  let samplePaths = [];
+  let sampleTrajectories = [];
 
   for (let i = 0; i < sims; i++) {
     let bal = bankroll;
@@ -85,40 +400,40 @@ function runSimulation() {
       if (bal <= sl) { sls++; break; }
 
       bal -= bet;
-      const r = Math.random();
+      const rand = Math.random();
       let mult = outcomes[0];
       for (let j = 0; j < cdf.length; j++) {
-        if (r <= cdf[j]) { mult = outcomes[j]; break; }
+        if (rand <= cdf[j]) { mult = outcomes[j]; break; }
       }
       bal += bet * mult;
       spins++;
 
-      if (i < 20) path.push(Number(bal.toFixed(2)));
+      if (i < 25) path.push(Number(bal.toFixed(2)));
     }
 
     totalSpins += spins;
-    if (i < 20) samplePaths.push(path);
+    if (i < 25) sampleTrajectories.push(path);
   }
 
-  // 顯示統計結果
-  document.getElementById('results').style.display = 'grid';
-  document.getElementById('tpRate').innerText = ((tps / sims) * 100).toFixed(2) + '%';
-  document.getElementById('slRate').innerText = ((sls / sims) * 100).toFixed(2) + '%';
-  document.getElementById('bustRate').innerText = ((busts / sims) * 100).toFixed(2) + '%';
-  document.getElementById('avgSpins').innerText = (totalSpins / sims).toFixed(1) + ' 轉';
+  // 呈現指標
+  document.getElementById('mcResultCards').style.display = 'grid';
+  document.getElementById('mcTPRate').innerText = ((tps / sims) * 100).toFixed(2) + '%';
+  document.getElementById('mcSLRate').innerText = ((sls / sims) * 100).toFixed(2) + '%';
+  document.getElementById('mcBustRate').innerText = ((busts / sims) * 100).toFixed(2) + '%';
+  document.getElementById('mcAvgSpins').innerText = (totalSpins / sims).toFixed(1) + ' 轉';
 
-  renderChart(samplePaths, tp, sl);
+  renderMonteCarloChart(sampleTrajectories, tp, sl);
 }
 
-function renderChart(paths, tp, sl) {
-  const ctx = document.getElementById('chartCanvas').getContext('2d');
+function renderMonteCarloChart(paths, tp, sl) {
+  const ctx = document.getElementById('mcChart').getContext('2d');
   const maxLen = Math.max(...paths.map(p => p.length));
   const labels = Array.from({length: maxLen}, (_, i) => `第 ${i} 轉`);
 
   const datasets = paths.map((p, idx) => ({
     label: `路徑 ${idx + 1}`,
     data: p,
-    borderColor: `hsl(${idx * 18}, 70%, 60%)`,
+    borderColor: `hsl(${idx * 15}, 65%, 55%)`,
     borderWidth: 1.2,
     pointRadius: 0,
     fill: false
@@ -132,12 +447,15 @@ function renderChart(paths, tp, sl) {
       responsive: true,
       plugins: { legend: { display: false } },
       scales: {
-        x: { grid: { color: '#334155' } },
-        y: { grid: { color: '#334155' } }
+        x: { grid: { color: '#1e293b' } },
+        y: { grid: { color: '#1e293b' } }
       }
     }
   });
 }
+
+// 頁面初始化執行
+updateBonusBuyEV();
 </script>
 </body>
 </html>
