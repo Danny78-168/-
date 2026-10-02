@@ -30,11 +30,15 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
     private func setupWebView() {
         let contentController = WKUserContentController()
         contentController.add(self, name: "requestVisualAnalysis")
+        contentController.add(self, name: "openExternalUrl")
 
         let bridgePolyfill = """
         window.AndroidBridge = {
-            requestVisualAnalysis: function(plat) {
-                window.webkit.messageHandlers.requestVisualAnalysis.postMessage(plat || 'auto');
+            requestVisualAnalysis: function(mode) {
+                window.webkit.messageHandlers.requestVisualAnalysis.postMessage(mode || 'auto');
+            },
+            openExternalUrl: function(url) {
+                window.webkit.messageHandlers.openExternalUrl.postMessage(url);
             }
         };
         """
@@ -166,12 +170,26 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
 
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         if message.name == "requestVisualAnalysis" {
-            let plat = (message.body as? String) ?? "auto"
-            captureAndAnalyze(platform: plat)
+            let mode = (message.body as? String) ?? "auto"
+            captureAndAnalyze(mode: mode)
+        } else if message.name == "openExternalUrl", let urlStr = message.body as? String, let url = URL(string: urlStr) {
+            UIApplication.shared.open(url)
         }
     }
 
-    private func captureAndAnalyze(platform: String) {
+    func webView(_ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+        if let url = navigationAction.request.url {
+            let host = url.host?.lowercased() ?? ""
+            if host == "lin.ee" || host == "t.me" || url.scheme == "line" || url.scheme == "tg" {
+                UIApplication.shared.open(url)
+                decisionHandler(.cancel)
+                return
+            }
+        }
+        decisionHandler(.allow)
+    }
+
+    private func captureAndAnalyze(mode: String) {
         guard !isAnalyzing else { return }
         isAnalyzing = true
 
@@ -200,11 +218,11 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
                 return
             }
 
-            self.callOpenAIAstra(base64Image: jpegData.base64EncodedString(), platform: platform)
+            self.callOpenAIAstra(base64Image: jpegData.base64EncodedString(), mode: mode)
         }
     }
 
-    private func callOpenAIAstra(base64Image: String, platform: String) {
+    private func callOpenAIAstra(base64Image: String, mode: String) {
         guard let url = URL(string: "https://api.openai.com/v1/responses") else { return }
 
         var request = URLRequest(url: url)
@@ -214,18 +232,11 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
         request.timeoutInterval = 25
 
         let prompt = """
-        你是頂尖百家樂視覺精算大師。當前牌桌模式設定為【\(platform.uppercased())】。
+        你是頂尖百家樂視覺精算大師。當前模式設定為【\(mode.uppercased())】。
         【通用視覺辨識核心指引】：
-        1. 本應用適用於任何娛樂城與任何百家樂遊戲介面。請觀察畫面中的路單走勢（大路、珠盤路、下三路）與即時比分。
-        2. 仔細辨識畫面底部或側邊的真實比分（莊/庄、閒/闲、和、總數/总數）：
-           - 無論是 MT、DG、WM、SA、歐博、Evolution 還是其他系統，請精確讀出當前數據。
-        【嚴格鐵律】：
-        - 嚴禁回答『畫面仍在載入』或『數據未知』！底欄數字清晰可見，務必識別真實比分填入 stats！
-        - 嚴禁輸出觀望！必須強制在【莊】與【閒】中二選一。
-        【推演流程】：
-        1. 提取真實比分填入 stats，例如『庄16 闲16 和7 (39局)』。
-        2. 依據大路走向（長龍或單跳）與下三路齊整度給出推薦。
-        3. 信心度評估於 68%~92% 之間，並給出具體形態理由。
+        1. 觀察畫面中的路單走勢（大路、珠盤路、下三路）與即時比分。
+        2. 嚴禁回答『畫面仍在載入』或『數據未知』！底欄數字清晰可見，務必識別真實比分填入 stats！
+        3. 嚴禁輸出觀望！必須強制在【莊】與【閒】中二選一，信心度評估於 68%~92% 之間。
         嚴格僅輸出純 JSON 物件：
         {"pick":"莊","conf":80,"reason":"大路單跳形態，下三路齊整轉紅","stats":"庄16 闲16 和7 (39局)"}
         """
@@ -336,24 +347,27 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
                     '<span id="hud_tog" style="cursor:pointer;color:#94a3b8;font-size:10px;margin-left:3px;">[收]</span>' +
                 '</div>' +
                 '<div id="hud_content" style="padding:10px;">' +
-                    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px;margin-bottom:6px;">' +
-                        '<button id="mode_gen" style="background:#2563eb;border:1px solid #38bdf8;color:#fff;padding:4px 0;border-radius:3px;font-size:9px;font-weight:bold;">通用</button>' +
-                        '<button id="mode_mt" style="background:#0f172a;border:1px solid #475569;color:#94a3b8;padding:4px 0;border-radius:3px;font-size:9px;">MT</button>' +
-                        '<button id="mode_dg" style="background:#0f172a;border:1px solid #475569;color:#94a3b8;padding:4px 0;border-radius:3px;font-size:9px;">DG</button>' +
+                    '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:6px;">' +
+                        '<button id="nav_mt" style="background:#0f172a;border:1px solid #38bdf8;color:#38bdf8;padding:5px 0;border-radius:4px;font-size:10px;font-weight:bold;cursor:pointer;">MT 百家</button>' +
+                        '<button id="nav_reg" style="background:#2563eb;border:1px solid #38bdf8;color:#fff;padding:5px 0;border-radius:4px;font-size:10px;font-weight:bold;cursor:pointer;">註冊入口</button>' +
                     '</div>' +
                     '<div style="background:rgba(15,23,42,0.85);border:1px solid #3b82f6;border-radius:6px;padding:8px 4px;text-align:center;margin-bottom:6px;">' +
                         '<div style="font-size:10px;color:#94a3b8;">🎯 深度路單精算建議</div>' +
                         '<div id="ai_pick_target" style="font-size:18px;font-weight:900;color:#ef4444;margin:2px 0;">待命中</div>' +
                         '<div id="ai_pick_desc" style="font-size:10px;color:#38bdf8;">點擊下方進行大路與下三路分析</div>' +
                     '</div>' +
-                    '<button id="btn_do_ai" style="width:100%;background:#2563eb;color:#fff;border:none;padding:8px 0;border-radius:4px;font-weight:bold;margin-bottom:6px;font-size:11px;">📸 截圖畫面並由 AI 辨識</button>' +
+                    '<button id="btn_do_ai" style="width:100%;background:#2563eb;color:#fff;border:none;padding:8px 0;border-radius:4px;font-weight:bold;margin-bottom:6px;font-size:11px;cursor:pointer;">📸 截圖畫面並由 AI 辨識</button>' +
                     '<div style="display:flex;justify-content:space-between;font-size:10px;color:#94a3b8;">' +
                         '<span id="hud_score">未掃描</span>' +
                         '<span id="hud_sync_dot" style="color:#4ade80;">● 連線</span>' +
                     '</div>' +
-                    '<div style="margin-top:8px;padding-top:6px;border-top:1px solid #334155;font-size:9px;color:#94a3b8;line-height:1.45;text-align:center;">' +
-                        '<div>代理聯繫LINE：<b style="color:#38bdf8;">@OSC168</b></div>' +
-                        '<div>Telegram：<b style="color:#38bdf8;">@TG_APK1</b></div>' +
+                    '<div style="margin-top:8px;padding-top:6px;border-top:1px solid #334155;display:flex;flex-direction:column;gap:5px;">' +
+                        '<button id="btn_line" style="width:100%;background:#06c755;border:none;color:#fff;padding:5px 0;border-radius:4px;font-size:10px;font-weight:bold;cursor:pointer;">💬 LINE: @OSC168</button>' +
+                        '<button id="btn_tg" style="width:100%;background:#0088cc;border:none;color:#fff;padding:5px 0;border-radius:4px;font-size:10px;font-weight:bold;cursor:pointer;">✈️ Telegram: @TG_APK1</button>' +
+                    '</div>' +
+                    '<div style="margin-top:8px;padding-top:6px;border-top:1px dashed #475569;font-size:8.5px;color:#94a3b8;line-height:1.35;text-align:center;">' +
+                        '<div style="color:#f87171;font-weight:bold;margin-bottom:2px;">🔞 未滿 18 歲禁止使用</div>' +
+                        '<div style=\"color:#64748b;\">【免責聲明】本系統僅供演算法與大數據統計模擬，不保證獲利。本應用嚴禁且不提供任何真實金錢交易、儲值或博弈服務，請遵守當地法規。</div>' +
                     '</div>' +
                 '</div>';
             rootTarget.appendChild(hud);
@@ -381,27 +395,25 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
                 else { cnt.style.display = 'none'; tog.innerText = '[展]'; }
             });
 
-            var bGen = document.getElementById('mode_gen');
-            var bMt = document.getElementById('mode_mt');
-            var bDg = document.getElementById('mode_dg');
-            function setMode(m) {
-                curMode = m;
-                [bGen, bMt, bDg].forEach(function(btn) {
-                    btn.style.background = '#0f172a'; btn.style.borderColor = '#475569'; btn.style.color = '#94a3b8';
-                });
-                var active = (m === 'mt') ? bMt : (m === 'dg' ? bDg : bGen);
-                active.style.background = '#2563eb'; active.style.borderColor = '#38bdf8'; active.style.color = '#fff';
+            bindTap(document.getElementById('nav_mt'), function() { window.location.href = 'https://www.osc169.com/#/game/play?game_name=meta_all&game_type=3&device=mobile'; });
+            bindTap(document.getElementById('nav_reg'), function() { window.location.href = 'https://osc188.com'; });
+
+            function openLink(u) {
+                if (window.AndroidBridge && window.AndroidBridge.openExternalUrl) {
+                    window.AndroidBridge.openExternalUrl(u);
+                } else {
+                    window.location.href = u;
+                }
             }
-            bindTap(bGen, function() { setMode('auto'); });
-            bindTap(bMt, function() { setMode('mt'); });
-            bindTap(bDg, function() { setMode('dg'); });
+            bindTap(document.getElementById('btn_line'), function() { openLink('https://lin.ee/NfoQ9DH'); });
+            bindTap(document.getElementById('btn_tg'), function() { openLink('https://t.me/TG_apk1'); });
 
             var btnDo = document.getElementById('btn_do_ai');
             bindTap(btnDo, function() {
                 btnDo.innerText = '🧠 Astra 深度推論中...';
                 btnDo.disabled = true;
                 if (window.AndroidBridge && window.AndroidBridge.requestVisualAnalysis) {
-                      window.AndroidBridge.requestVisualAnalysis(curMode);
+                    window.AndroidBridge.requestVisualAnalysis(curMode);
                 }
             });
 
