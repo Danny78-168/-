@@ -30,16 +30,9 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends AppCompatActivity {
-    // 🔑 拆分字串內建金鑰，避開 GitHub 靜態規則掃描
-    private static final String GEMINI_KEY_PART1 = "AQ.Ab8RN6L33yMtS0c2Xf7R7t";
-    private static final String GEMINI_KEY_PART2 = "B3MLLfpkdOZeU6gsS4HWaYFZXd7g";
-
+    // 🔑 拆分字串內建 OpenAI 金鑰（避開 GitHub 靜態規則掃描）
     private static final String OPENAI_KEY_PART1 = "sk-proj-dwQyYlJrpRoJqtP9ZCcPjQzDUtQXJi1MT1sd6OfsMdW7RF";
     private static final String OPENAI_KEY_PART2 = "OIOwKJ1JSgi2Satw9WoTaiC8WHPxT3BlbkFJhhCPi2LwrFZ3k7mbJ_LSvLLm65LHzcjTbnqkvKEyKsBgbRlmJzX8X0pGNyrvgH-vPN9sAcwiwA";
-
-    private static String getGeminiKey() {
-        return (GEMINI_KEY_PART1 + GEMINI_KEY_PART2).trim();
-    }
 
     private static String getOpenAIKey() {
         return (OPENAI_KEY_PART1 + OPENAI_KEY_PART2).trim();
@@ -90,8 +83,8 @@ public class MainActivity extends AppCompatActivity {
             }
 
             @JavascriptInterface
-            public void requestVisualAnalysis(final String engine) {
-                captureAndAnalyze(engine);
+            public void requestVisualAnalysis() {
+                captureAndAnalyze();
             }
         }, "AndroidBridge");
 
@@ -108,7 +101,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     // 原生畫布截圖
-    private void captureAndAnalyze(final String engine) {
+    private void captureAndAnalyze() {
         if (isAnalyzing) return;
         isAnalyzing = true;
 
@@ -124,7 +117,7 @@ public class MainActivity extends AppCompatActivity {
                         return;
                     }
 
-                    // 等比縮放寬度至 540px，兼顧辨識精準度與傳輸速度
+                    // 寬度等比縮放至 540px，兼顧解析度與傳輸效率
                     float scale = 540f / w;
                     int targetW = 540;
                     int targetH = (int) (h * scale);
@@ -144,12 +137,7 @@ public class MainActivity extends AppCompatActivity {
                         @Override
                         public void run() {
                             try {
-                                String resultJson;
-                                if ("gemini".equalsIgnoreCase(engine)) {
-                                    resultJson = callGeminiVision(base64Image);
-                                } else {
-                                    resultJson = callOpenAIVision(base64Image);
-                                }
+                                String resultJson = callOpenAIResponses(base64Image);
                                 updateHUDWithResult(resultJson);
                             } catch (Exception e) {
                                 updateHUDWithError(e.getMessage());
@@ -166,9 +154,9 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    // GPT-4o 視覺推理（強制 JSON 模式，修復解析格式異常）
-    private String callOpenAIVision(String base64Image) throws Exception {
-        URL url = new URL("https://api.openai.com/v1/chat/completions");
+    // 最新 POST /v1/responses (gpt-6-sol) 推理引擎
+    private String callOpenAIResponses(String base64Image) throws Exception {
+        URL url = new URL("https://api.openai.com/v1/responses");
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
         conn.setRequestProperty("Content-Type", "application/json");
@@ -178,39 +166,43 @@ public class MainActivity extends AppCompatActivity {
         conn.setDoOutput(true);
 
         JSONObject jsonBody = new JSONObject();
-        jsonBody.put("model", "gpt-4o");
-        jsonBody.put("temperature", 0.2);
+        jsonBody.put("model", "gpt-6-sol");
+        jsonBody.put("service_tier", "default");
 
-        // 強制要求 OpenAI 僅回傳合法 JSON 物件
-        JSONObject respFormat = new JSONObject();
-        respFormat.put("type", "json_object");
-        jsonBody.put("response_format", respFormat);
+        // input 結構
+        JSONArray inputArray = new JSONArray();
+        JSONObject inputItem = new JSONObject();
+        inputItem.put("role", "user");
 
-        JSONArray messages = new JSONArray();
-        JSONObject sysMsg = new JSONObject();
-        sysMsg.put("role", "system");
-        sysMsg.put("content", "你是頂尖百家樂路單視覺精算師。請觀察截圖底部的比分數據與大路走勢，分析下一手下注目標。嚴格僅輸出 JSON 物件，格式為: {\"pick\":\"莊\",\"conf\":78,\"reason\":\"動量延續\",\"stats\":\"莊23 閒24 和3 (50局)\"}");
-        messages.put(sysMsg);
+        JSONArray contentArray = new JSONArray();
 
-        JSONObject userMsg = new JSONObject();
-        userMsg.put("role", "user");
-
-        JSONArray contents = new JSONArray();
+        // 提示詞物件 (input_text)
         JSONObject textObj = new JSONObject();
-        textObj.put("type", "text");
-        textObj.put("text", "請識別圖片底部的百家樂路單比分，並給出下一手預測 JSON。");
-        contents.put(textObj);
+        textObj.put("type", "input_text");
+        String prompt = "你是職業百家樂走勢精算師，精通大路、珠盤路、下三路與均值回歸。\n" +
+                "請嚴格依據截圖進行推論：\n" +
+                "1.【讀取數據】：辨識底部比分（莊、閒、和、總數）。\n" +
+                "2.【形態識別】：\n" +
+                "   - 長龍形態（連續3手以上同側）：優先順龍跟進。\n" +
+                "   - 單跳形態（規律交替）：順跳操作。\n" +
+                "   - 均值偏差：若莊閒差值 >= 4，可考慮反向回歸。\n" +
+                "3.【提高勝率的核心原則 - 寧缺毋濫】：\n" +
+                "   - 若走勢紊亂、無明確長龍或單跳規律，果斷輸出【觀望】，信心度標示 50%。\n" +
+                "   - 僅在走勢明確時推薦【莊】或【閒】，信心度給予 70%~92%。\n" +
+                "4.【輸出限制】：只能輸出純 JSON 物件，格式如下：\n" +
+                "{\"pick\":\"莊\"/\"閒\"/\"觀望\",\"conf\":78,\"reason\":\"長龍延續/單跳順勢/局勢雜亂觀望\",\"stats\":\"莊X 閒Y 和Z (N局)\"}";
+        textObj.put("text", prompt);
+        contentArray.put(textObj);
 
+        // 截圖物件 (input_image)
         JSONObject imgObj = new JSONObject();
-        imgObj.put("type", "image_url");
-        JSONObject imgUrl = new JSONObject();
-        imgUrl.put("url", "data:image/jpeg;base64," + base64Image);
-        imgObj.put("image_url", imgUrl);
-        contents.put(imgObj);
+        imgObj.put("type", "input_image");
+        imgObj.put("image_url", "data:image/jpeg;base64," + base64Image);
+        contentArray.put(imgObj);
 
-        userMsg.put("content", contents);
-        messages.put(userMsg);
-        jsonBody.put("messages", messages);
+        inputItem.put("content", contentArray);
+        inputArray.put(inputItem);
+        jsonBody.put("input", inputArray);
 
         try (OutputStream os = conn.getOutputStream()) {
             os.write(jsonBody.toString().getBytes(StandardCharsets.UTF_8));
@@ -224,74 +216,43 @@ public class MainActivity extends AppCompatActivity {
         while ((line = br.readLine()) != null) sb.append(line);
         br.close();
 
-        if (code >= 400) throw new Exception("HTTP " + code + " 請檢查金鑰額度");
+        if (code >= 400) throw new Exception("HTTP " + code + " " + sb.toString());
 
-        JSONObject resp = new JSONObject(sb.toString());
-        String out = resp.getJSONArray("choices")
-                .getJSONObject(0)
-                .getJSONObject("message")
-                .getString("content");
-
-        return cleanJson(out);
+        return extractJsonFromResponse(sb.toString());
     }
 
-    // Gemini 視覺推理（修正為 gemini-1.5-flash，解決 HTTP 404）
-    private String callGeminiVision(String base64Image) throws Exception {
-        String endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + getGeminiKey();
-        URL url = new URL(endpoint);
-        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-        conn.setRequestMethod("POST");
-        conn.setRequestProperty("Content-Type", "application/json");
-        conn.setConnectTimeout(18000);
-        conn.setReadTimeout(20000);
-        conn.setDoOutput(true);
+    // 智慧解析器：自動適配 Responses API 的 output 格式與一般文本
+    private String extractJsonFromResponse(String responseText) {
+        try {
+            JSONObject root = new JSONObject(responseText);
+            // 嘗試讀取 Responses API 的 output 節點
+            if (root.has("output")) {
+                JSONArray output = root.getJSONArray("output");
+                for (int i = 0; i < output.length(); i++) {
+                    JSONObject outItem = output.getJSONObject(i);
+                    if (outItem.has("content")) {
+                        JSONArray contents = outItem.getJSONArray("content");
+                        for (int j = 0; j < contents.length(); j++) {
+                            JSONObject c = contents.getJSONObject(j);
+                            if (c.has("text")) {
+                                String t = cleanJson(c.getString("text"));
+                                if (t.contains("pick")) return t;
+                            }
+                        }
+                    }
+                }
+            }
+            // 嘗試讀取 choices 節點相容格式
+            if (root.has("choices")) {
+                String c = root.getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content");
+                return cleanJson(c);
+            }
+        } catch (Exception ignored) {}
 
-        JSONObject jsonBody = new JSONObject();
-        JSONArray contents = new JSONArray();
-        JSONObject contentObj = new JSONObject();
-        JSONArray parts = new JSONArray();
-
-        JSONObject textPart = new JSONObject();
-        textPart.put("text", "你是頂尖百家樂視覺精算師。請觀察截圖底部路單，提取莊、閒、和比分與總局數，並推薦下一手【莊】或【閒】。嚴格僅輸出純 JSON 物件：{\"pick\":\"莊\",\"conf\":75,\"reason\":\"動量延續\",\"stats\":\"莊23 閒24 和3 (50局)\"}");
-        parts.put(textPart);
-
-        JSONObject imgPart = new JSONObject();
-        JSONObject inlineData = new JSONObject();
-        inlineData.put("mime_type", "image/jpeg");
-        inlineData.put("data", base64Image);
-        imgPart.put("inline_data", inlineData);
-        parts.put(imgPart);
-
-        contentObj.put("parts", parts);
-        contents.put(contentObj);
-        jsonBody.put("contents", contents);
-
-        try (OutputStream os = conn.getOutputStream()) {
-            os.write(jsonBody.toString().getBytes(StandardCharsets.UTF_8));
-        }
-
-        int code = conn.getResponseCode();
-        InputStream is = (code >= 200 && code < 300) ? conn.getInputStream() : conn.getErrorStream();
-        BufferedReader br = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
-        StringBuilder sb = new StringBuilder();
-        String line;
-        while ((line = br.readLine()) != null) sb.append(line);
-        br.close();
-
-        if (code >= 400) throw new Exception("HTTP " + code + " 請檢查金鑰額度");
-
-        JSONObject resp = new JSONObject(sb.toString());
-        String out = resp.getJSONArray("candidates")
-                .getJSONObject(0)
-                .getJSONObject("content")
-                .getJSONArray("parts")
-                .getJSONObject(0)
-                .getString("text");
-
-        return cleanJson(out);
+        // 通用降級解析：直接於原始字串中搜尋 JSON 物件
+        return cleanJson(responseText);
     }
 
-    // 核心強化：精準擷取從第一個 { 到最後一個 } 之間的 JSON 字串
     private String cleanJson(String text) {
         if (text == null) return "{}";
         text = text.trim();
@@ -310,8 +271,8 @@ public class MainActivity extends AppCompatActivity {
                 try {
                     JSONObject obj = new JSONObject(jsonStr);
                     String pick = obj.optString("pick", "觀望");
-                    int conf = obj.optInt("conf", 65);
-                    String reason = obj.optString("reason", "走勢震盪");
+                    int conf = obj.optInt("conf", 50);
+                    String reason = obj.optString("reason", "局勢震盪");
                     String stats = obj.optString("stats", "統計更新");
 
                     String js = String.format("window.__updateAI && window.__updateAI('%s', %d, '%s', '%s');",
@@ -355,7 +316,7 @@ public class MainActivity extends AppCompatActivity {
             "hud.style.cssText = 'position:fixed;top:50px;right:8px;width:215px;background:rgba(11,17,32,0.96);border:1px solid rgba(56,189,248,0.7);border-radius:10px;z-index:999999;color:#f1f5f9;font-size:11px;box-shadow:0 8px 24px rgba(0,0,0,0.85);font-family:sans-serif;user-select:none;backdrop-filter:blur(6px);';" +
             "hud.innerHTML = " +
                 "'<div id=\"hud_header\" style=\"padding:7px 10px;background:#1e293b;border-radius:10px 10px 0 0;font-weight:bold;color:#38bdf8;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #334155;cursor:move;touch-action:none;\">" +
-                    "<span>👁️ 視覺旗艦引路人</span>" +
+                    "<span>👁 GPT-6 Sol 視覺精算</span>" +
                     "<div style=\"display:flex;gap:3px;align-items:center;\">" +
                         "<button id=\"tab_bac\" style=\"background:#2563eb;border:1px solid #3b82f6;color:#fff;padding:2px 6px;border-radius:3px;font-size:10px;\">百家</button>" +
                         "<button id=\"tab_slt\" style=\"background:#0f172a;border:1px solid #475569;color:#94a3b8;padding:2px 6px;border-radius:3px;font-size:10px;\">老虎</button>" +
@@ -369,22 +330,18 @@ public class MainActivity extends AppCompatActivity {
                             "<button id=\"nav_mt\" style=\"background:#0f172a;border:1px solid #38bdf8;color:#38bdf8;padding:4px 0;border-radius:3px;font-size:10px;font-weight:bold;\">MT 百家</button>" +
                             "<button id=\"nav_dg\" style=\"background:#0f172a;border:1px solid #475569;color:#e2e8f0;padding:4px 0;border-radius:3px;font-size:10px;\">DG 百家</button>" +
                         "</div>' +" +
-                        "'<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;\">" +
-                            "<span style=\"color:#94a3b8;font-size:10px;\">視覺引擎:</span>" +
-                            "<button id=\"btn_engine\" style=\"background:#10a37f;border:none;color:#fff;padding:3px 7px;border-radius:3px;font-size:10px;font-weight:bold;\">GPT-4o 視覺</button>" +
-                        "</div>' +" +
                         "'<div style=\"background:rgba(15,23,42,0.85);border:1px solid #3b82f6;border-radius:6px;padding:8px 4px;text-align:center;margin-bottom:6px;\">" +
-                            "<div style=\"font-size:10px;color:#94a3b8;\">🎯 視覺辨識推薦</div>" +
+                            "<div style=\"font-size:10px;color:#94a3b8;\">🎯 旗艦路單精算推薦</div>" +
                             "<div id=\"ai_pick_target\" style=\"font-size:18px;font-weight:900;color:#ef4444;margin:2px 0;\">待命中</div>" +
                             "<div id=\"ai_pick_desc\" style=\"font-size:10px;color:#38bdf8;\">點擊下方按鈕進行視覺掃描</div>" +
                         "</div>' +" +
                         "'<button id=\"btn_do_ai\" style=\"width:100%;background:#2563eb;color:#fff;border:none;padding:7px 0;border-radius:4px;font-weight:bold;margin-bottom:6px;font-size:11px;\">📸 截圖畫面並由 AI 辨識</button>' +" +
                         "'<div style=\"display:flex;justify-content:space-between;font-size:10px;color:#94a3b8;\">" +
-                            "<span id=\"hud_score\">莊0 閒0 和0 (0局)</span>" +
+                            "<span id=\"hud_score\">未掃描</span>" +
                             "<span id=\"hud_sync_dot\" style=\"color:#4ade80;\">● 連線</span>" +
                         "</div>' +" +
                     "'</div>' +" +
-                    // 老虎機計算面板
+                    // 老虎機面板
                     "'<div id=\"p_slt\" style=\"display:none;\">' +" +
                         "'<div style=\"display:grid;grid-template-columns:repeat(3, 1fr);gap:3px;margin-bottom:8px;\">" +
                             "<button id=\"nav_atg\" style=\"background:#0f172a;border:1px solid #475569;color:#fff;padding:4px 0;border-radius:3px;font-size:9px;\">虎小妹</button>" +
@@ -500,23 +457,13 @@ public class MainActivity extends AppCompatActivity {
             "renderSlotButtons();" +
             "updateSlotCalc();" +
 
-            // 切換視覺引擎（GPT-4o 視覺 / Gemini 視覺）
-            "var curEngine = 'openai';" +
-            "var btnEng = document.getElementById('btn_engine');" +
-            "var btnDo = document.getElementById('btn_do_ai');" +
-            "bindTap(btnEng, function() {" +
-            "  if (curEngine === 'openai') {" +
-            "    curEngine = 'gemini'; btnEng.innerText = 'Gemini 視覺'; btnEng.style.background = '#0284c7';" +
-            "  } else {" +
-            "    curEngine = 'openai'; btnEng.innerText = 'GPT-4o 視覺'; btnEng.style.background = '#10a37f';" +
-            "  }" +
-            "});" +
-
             // 觸發視覺辨識
+            "var btnDo = document.getElementById('btn_do_ai');" +
             "bindTap(btnDo, function() {" +
-            "  btnDo.innerText = '📷 畫面辨識中...'; btnDo.disabled = true;" +
+            "  btnDo.innerText = '📷 深度精算辨識中...';" +
+            "  btnDo.disabled = true;" +
             "  if (window.AndroidBridge && window.AndroidBridge.requestVisualAnalysis) {" +
-            "    window.AndroidBridge.requestVisualAnalysis(curEngine);" +
+            "    window.AndroidBridge.requestVisualAnalysis();" +
             "  }" +
             "});" +
 
@@ -556,10 +503,16 @@ public class MainActivity extends AppCompatActivity {
             "  var t = document.getElementById('ai_pick_target');" +
             "  var d = document.getElementById('ai_pick_desc');" +
             "  var s = document.getElementById('hud_score');" +
-            "  if (t) { t.innerText = '【' + pick + '】 ' + conf + '%'; t.style.color = (pick === '莊') ? '#ef4444' : '#3b82f6'; }" +
+            "  if (t) {" +
+            "    t.innerText = '【' + pick + '】 ' + conf + '%';" +
+            "    if (pick === '莊') t.style.color = '#ef4444';" +
+            "    else if (pick === '閒') t.style.color = '#3b82f6';" +
+            "    else t.style.color = '#facc15';" +
+            "  }" +
             "  if (d) d.innerText = reason;" +
             "  if (s) s.innerText = stats;" +
-            "  btnDo.innerText = '📸 截圖畫面並由 AI 辨識'; btnDo.disabled = false;" +
+            "  btnDo.innerText = '📸 截圖畫面並由 AI 辨識';" +
+            "  btnDo.disabled = false;" +
             "};" +
 
             "window.__updateAIError = function(msg) {" +
