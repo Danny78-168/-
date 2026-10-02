@@ -97,7 +97,8 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        webView.loadUrl("https://www.osc169.com/#/game/play?game_name=meta_all&game_type=3&device=mobile");
+        // 登入預設網址
+        webView.loadUrl("https://osc188.com");
     }
 
     // 原生畫布截圖
@@ -117,7 +118,7 @@ public class MainActivity extends AppCompatActivity {
                         return;
                     }
 
-                    // 寬度等比縮放至 540px，傳輸輕量且辨識精準
+                    // 寬度等比縮放至 540px，兼顧辨識精準度與傳輸速度
                     float scale = 540f / w;
                     int targetW = 540;
                     int targetH = (int) (h * scale);
@@ -187,9 +188,9 @@ public class MainActivity extends AppCompatActivity {
                 "請嚴格觀察圖片下半部【珠盤路、大路、下三路（大眼仔、小路、蟑螂路）】：\n" +
                 "【嚴禁行為】：嚴禁僅以『比分接近/莊天然勝率』作為預測理由！嚴禁輸出觀望！必須強制二選一【莊】或【閒】！\n\n" +
                 "【高勝率推演核心流程】：\n" +
-                "1.【大路形態識別】：觀察大路最新一列的走勢。是處於連龍（連續同側 $\\ge 2$）？還是處於規律單跳（一莊一閒交替）？最新一手落點是在莊還是閒？\n" +
+                "1.【大路形態識別】：觀察大路最新一列的走勢。是處於連龍（連續同側 >= 2）？還是處於規律單跳（一莊一閒交替）？最新一手落點是在莊還是閒？\n" +
                 "2.【下三路拍整度驗證】：觀察右下角三行紅藍標記。紅筆（拍整/對齊）多代表規律延續，藍筆多代表轉向變盤。\n" +
-                "3.【均值修正】：若莊閒比分差距 $\\ge 3$ 局，將大數回歸作為權重輔助。\n" +
+                "3.【均值修正】：若莊閒比分差距 >= 3 局，將大數回歸作為權重輔助。\n" +
                 "4.【精算輸出】：\n" +
                 "   - 依據形態信心度評估於 68%~92% 之間。\n" +
                 "   - 理由必須點出具體形態，例如：『大路3連龍動態順延』、『逢閒必跳單跳走勢』、『下三路齊整轉紅』。\n\n" +
@@ -313,51 +314,31 @@ public class MainActivity extends AppCompatActivity {
 
             "var hud = document.createElement('div');" +
             "hud.id = 'slot-assistant-hud';" +
-            "hud.style.cssText = 'position:fixed;top:50px;right:8px;width:215px;background:rgba(11,17,32,0.96);border:1px solid rgba(56,189,248,0.7);border-radius:10px;z-index:999999;color:#f1f5f9;font-size:11px;box-shadow:0 8px 24px rgba(0,0,0,0.85);font-family:sans-serif;user-select:none;backdrop-filter:blur(6px);';" +
+            "hud.style.cssText = 'position:fixed;top:50px;right:8px;width:205px;background:rgba(11,17,32,0.96);border:1px solid rgba(56,189,248,0.7);border-radius:10px;z-index:999999;color:#f1f5f9;font-size:11px;box-shadow:0 8px 24px rgba(0,0,0,0.85);font-family:sans-serif;user-select:none;backdrop-filter:blur(6px);';" +
             "hud.innerHTML = " +
                 "'<div id=\"hud_header\" style=\"padding:7px 10px;background:#1e293b;border-radius:10px 10px 0 0;font-weight:bold;color:#38bdf8;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #334155;cursor:move;touch-action:none;\">" +
                     "<span>👁 Astra 深度推論</span>" +
-                    "<div style=\"display:flex;gap:3px;align-items:center;\">" +
-                        "<button id=\"tab_bac\" style=\"background:#2563eb;border:1px solid #3b82f6;color:#fff;padding:2px 6px;border-radius:3px;font-size:10px;\">百家</button>" +
-                        "<button id=\"tab_slt\" style=\"background:#0f172a;border:1px solid #475569;color:#94a3b8;padding:2px 6px;border-radius:3px;font-size:10px;\">老虎</button>" +
-                        "<span id=\"hud_tog\" style=\"cursor:pointer;color:#94a3b8;font-size:10px;margin-left:3px;\">[收]</span>" +
-                    "</div>" +
+                    "<span id=\"hud_tog\" style=\"cursor:pointer;color:#94a3b8;font-size:10px;margin-left:3px;\">[收]</span>" +
                 "</div>' +" +
                 "'<div id=\"hud_content\" style=\"padding:10px;\">' +" +
-                    // 百家樂面板
-                    "'<div id=\"p_bac\">' +" +
-                        "'<div style=\"display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:6px;\">" +
-                            "<button id=\"nav_mt\" style=\"background:#0f172a;border:1px solid #38bdf8;color:#38bdf8;padding:4px 0;border-radius:3px;font-size:10px;font-weight:bold;\">MT 百家</button>" +
-                            "<button id=\"nav_dg\" style=\"background:#0f172a;border:1px solid #475569;color:#e2e8f0;padding:4px 0;border-radius:3px;font-size:10px;\">DG 百家</button>" +
-                        "</div>' +" +
-                        "'<div style=\"background:rgba(15,23,42,0.85);border:1px solid #3b82f6;border-radius:6px;padding:8px 4px;text-align:center;margin-bottom:6px;\">" +
-                            "<div style=\"font-size:10px;color:#94a3b8;\">🎯 深度路單精算建議</div>" +
-                            "<div id=\"ai_pick_target\" style=\"font-size:18px;font-weight:900;color:#ef4444;margin:2px 0;\">待命中</div>" +
-                            "<div id=\"ai_pick_desc\" style=\"font-size:10px;color:#38bdf8;\">點擊下方進行大路與下三路分析</div>" +
-                        "</div>' +" +
-                        "'<button id=\"btn_do_ai\" style=\"width:100%;background:#2563eb;color:#fff;border:none;padding:7px 0;border-radius:4px;font-weight:bold;margin-bottom:6px;font-size:11px;\">📸 截圖畫面並由 AI 辨識</button>' +" +
-                        "'<div style=\"display:flex;justify-content:space-between;font-size:10px;color:#94a3b8;\">" +
-                            "<span id=\"hud_score\">未掃描</span>" +
-                            "<span id=\"hud_sync_dot\" style=\"color:#4ade80;\">● 連線</span>" +
-                        "</div>' +" +
-                    "'</div>' +" +
-                    // 老虎機面板
-                    "'<div id=\"p_slt\" style=\"display:none;\">' +" +
-                        "'<div style=\"display:grid;grid-template-columns:repeat(3, 1fr);gap:3px;margin-bottom:8px;\">" +
-                            "<button id=\"nav_atg\" style=\"background:#0f172a;border:1px solid #475569;color:#fff;padding:4px 0;border-radius:3px;font-size:9px;\">虎小妹</button>" +
-                            "<button id=\"nav_rsg\" style=\"background:#0f172a;border:1px solid #475569;color:#fff;padding:4px 0;border-radius:3px;font-size:9px;\">雷神</button>" +
-                            "<button id=\"nav_ava\" style=\"background:#0f172a;border:1px solid #475569;color:#fff;padding:4px 0;border-radius:3px;font-size:9px;\">Avatar</button>" +
-                        "</div>' +" +
-                        "'<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;\">" +
-                            "<span>單注:</span>" +
-                            "<input id=\"s_bet\" type=\"number\" value=\"1.00\" step=\"0.10\" style=\"width:50px;background:#1e293b;border:1px solid #475569;color:#38bdf8;padding:2px;text-align:right;border-radius:3px;\">" +
-                        "</div>' +" +
-                        "'<div id=\"slot_modes\" style=\"display:grid;grid-template-columns:repeat(3, 1fr);gap:2px;margin-bottom:8px;\"></div>' +" +
-                        "'<div style=\"font-size:10px;\">' +" +
-                            "'<div style=\"display:flex;justify-content:space-between;margin-bottom:3px;\">免遊成本: <b id=\"s_cost\" style=\"color:#fff;\">$200.00</b></div>' +" +
-                            "'<div style=\"display:flex;justify-content:space-between;margin-bottom:3px;\">理論(96.5%): <b id=\"s_ev\" style=\"color:#4ade80;\">$193.00</b></div>' +" +
-                            "'<div style=\"display:flex;justify-content:space-between;\">中位數: <b id=\"s_med\" style=\"color:#facc15;\">$84.00</b></div>' +" +
-                        "'</div>' +" +
+                    "'<div style=\"display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:6px;\">" +
+                        "<button id=\"nav_mt\" style=\"background:#0f172a;border:1px solid #38bdf8;color:#38bdf8;padding:4px 0;border-radius:3px;font-size:10px;font-weight:bold;\">MT 百家</button>" +
+                        "<button id=\"nav_dg\" style=\"background:#0f172a;border:1px solid #475569;color:#e2e8f0;padding:4px 0;border-radius:3px;font-size:10px;\">DG 百家</button>" +
+                    "</div>' +" +
+                    "'<div style=\"background:rgba(15,23,42,0.85);border:1px solid #3b82f6;border-radius:6px;padding:8px 4px;text-align:center;margin-bottom:6px;\">" +
+                        "<div style=\"font-size:10px;color:#94a3b8;\">🎯 深度路單精算建議</div>" +
+                        "<div id=\"ai_pick_target\" style=\"font-size:18px;font-weight:900;color:#ef4444;margin:2px 0;\">待命中</div>" +
+                        "<div id=\"ai_pick_desc\" style=\"font-size:10px;color:#38bdf8;\">點擊下方進行大路與下三路分析</div>" +
+                    "</div>' +" +
+                    "'<button id=\"btn_do_ai\" style=\"width:100%;background:#2563eb;color:#fff;border:none;padding:7px 0;border-radius:4px;font-weight:bold;margin-bottom:6px;font-size:11px;\">📸 截圖畫面並由 AI 辨識</button>' +" +
+                    "'<div style=\"display:flex;justify-content:space-between;font-size:10px;color:#94a3b8;\">" +
+                        "<span id=\"hud_score\">未掃描</span>" +
+                        "<span id=\"hud_sync_dot\" style=\"color:#4ade80;\">● 連線</span>" +
+                    "</div>' +" +
+                    // 代理聯繫資訊區塊
+                    "'<div style=\"margin-top:8px;padding-top:6px;border-top:1px solid #334155;font-size:9px;color:#94a3b8;line-height:1.45;text-align:center;\">' +" +
+                        "'<div>代理聯繫LINE：<b style=\"color:#38bdf8;\">@OSC168</b></div>' +" +
+                        "'<div>Telegram：<b style=\"color:#38bdf8;\">@TG_APK1</b></div>' +" +
                     "'</div>' +" +
                 "'</div>';" +
             "document.body.appendChild(hud);" +
@@ -387,75 +368,14 @@ public class MainActivity extends AppCompatActivity {
             "  else { cnt.style.display = 'none'; tog.innerText = '[展]'; }" +
             "});" +
 
-            // 分頁切換
-            "var tB = document.getElementById('tab_bac');" +
-            "var tS = document.getElementById('tab_slt');" +
-            "var pB = document.getElementById('p_bac');" +
-            "var pS = document.getElementById('p_slt');" +
-            "function switchTab(view) {" +
-            "  pB.style.display = 'none'; pS.style.display = 'none';" +
-            "  tB.style.background = '#0f172a'; tB.style.color = '#94a3b8'; tB.style.borderColor = '#475569';" +
-            "  tS.style.background = '#0f172a'; tS.style.color = '#94a3b8'; tS.style.borderColor = '#475569';" +
-            "  if (view === 'bac'){" +
-            "    pB.style.display = 'block'; tB.style.background = '#2563eb'; tB.style.color = '#fff'; tB.style.borderColor = '#3b82f6';" +
-            "  } else {" +
-            "    pS.style.display = 'block'; tS.style.background = '#2563eb'; tS.style.color = '#fff'; tS.style.borderColor = '#3b82f6';" +
-            "  }" +
-            "}" +
-            "bindTap(tB, function() { switchTab('bac'); });" +
-            "bindTap(tS, function() { switchTab('slt'); });" +
-
-            // 換台
+            // 快捷換台
             "function safeNav(url) {" +
             "  if (location.href === url) return;" +
             "  if (window.AndroidBridge && window.AndroidBridge.switchGame) window.AndroidBridge.switchGame(url);" +
             "  else location.href = url;" +
             "}" +
-            "bindTap(document.getElementById('nav_mt'), function() { safeNav('https://www.osc169.com/#/game/play?game_name=meta_all&game_type=3&device=mobile'); });" +
-            "bindTap(document.getElementById('nav_dg'), function() { safeNav('https://www.osc169.com/#/game/play?game_name=dg&game_type=3&device=mobile'); });" +
-            "bindTap(document.getElementById('nav_atg'), function() { curSlot = 'atg'; renderSlotButtons(); updateSlotCalc(); safeNav('https://www.osc169.com/#/game/play?game_name=atg&productId=tiger-princess&device=mobile'); });" +
-            "bindTap(document.getElementById('nav_rsg'), function() { curSlot = 'rsg'; renderSlotButtons(); updateSlotCalc(); safeNav('https://www.osc169.com/#/game/play?game_name=rsg&productId=129&device=mobile'); });" +
-            "bindTap(document.getElementById('nav_ava'), function() { curSlot = 'ava'; renderSlotButtons(); updateSlotCalc(); safeNav('https://www.osc169.com/#/game/play?game_name=avatar&productId=140083&device=mobile'); });" +
-
-            // 老虎機計算機
-            "var slotConfigs = {" +
-            "  atg: [{ label: '200x', mult: 200 }, { label: '500x', mult: 500 }, { label: '2000x', mult: 2000 }]," +
-            "  rsg: [{ label: '免遊 100x', mult: 100 }]," +
-            "  ava: [{ label: '獎金 80x', mult: 80 }, { label: '最大 240x', mult: 240 }]" +
-            "};" +
-            "var curSlot = 'atg';" +
-            "var curMult = slotConfigs[curSlot][0].mult;" +
-            "var betInp = document.getElementById('s_bet');" +
-            "function updateSlotCalc() {" +
-            "  var b = parseFloat(betInp.value) || 0;" +
-            "  var c = b * curMult;" +
-            "  document.getElementById('s_cost').innerText = '$' + c.toFixed(2);" +
-            "  document.getElementById('s_ev').innerText = '$' + (c * 0.965).toFixed(2);" +
-            "  document.getElementById('s_med').innerText = '$' + (b * (curMult * 0.42)).toFixed(2);" +
-            "}" +
-            "function renderSlotButtons() {" +
-            "  var container = document.getElementById('slot_modes');" +
-            "  container.innerHTML = '';" +
-            "  var modes = slotConfigs[curSlot];" +
-            "  container.style.gridTemplateColumns = 'repeat(' + modes.length + ', 1fr)';" +
-            "  for (var i = 0; i < modes.length; i++) {" +
-            "    (function(m) {" +
-            "      var btn = document.createElement('button');" +
-            "      btn.innerText = m.label;" +
-            "      btn.style.cssText = 'padding:3px 0;border-radius:3px;font-size:9px;cursor:pointer;';" +
-            "      if (m.mult === curMult) {" +
-            "        btn.style.background = '#3b82f6'; btn.style.border = 'none'; btn.style.color = '#fff'; btn.style.fontWeight = 'bold';" +
-            "      } else {" +
-            "        btn.style.background = '#0f172a'; btn.style.border = '1px solid #475569'; btn.style.color = '#94a3b8';" +
-            "      }" +
-            "      bindTap(btn, function() { curMult = m.mult; renderSlotButtons(); updateSlotCalc(); });" +
-            "      container.appendChild(btn);" +
-            "    })(modes[i]);" +
-            "  }" +
-            "}" +
-            "betInp.oninput = updateSlotCalc;" +
-            "renderSlotButtons();" +
-            "updateSlotCalc();" +
+            "bindTap(document.getElementById('nav_mt'), function() { safeNav('https://osc188.com/#/game/play?game_name=meta_all&game_type=3&device=mobile'); });" +
+            "bindTap(document.getElementById('nav_dg'), function() { safeNav('https://osc188.com/#/game/play?game_name=dg&game_type=3&device=mobile'); });" +
 
             // 觸發視覺辨識
             "var btnDo = document.getElementById('btn_do_ai');" +
