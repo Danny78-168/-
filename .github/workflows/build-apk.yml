@@ -24,19 +24,6 @@ jobs:
         with:
           gradle-version: '8.2'
 
-      - name: Inject Secrets into Code
-        env:
-          G_KEY: ${{ secrets.APP_GEMINI_KEY }}
-          O_KEY: ${{ secrets.APP_OPENAI_KEY }}
-        run: |
-          # 自動將 GitHub Secrets 注入到 Java 程式碼中
-          if [ -n "$G_KEY" ]; then
-            sed -i "s|##INJECT_GEMINI_KEY##|$G_KEY|g" app/src/main/java/com/slot/assistant/MainActivity.java
-          fi
-          if [ -n "$O_KEY" ]; then
-            sed -i "s|##INJECT_OPENAI_KEY##|$O_KEY|g" app/src/main/java/com/slot/assistant/MainActivity.java
-          fi
-
       - name: Build Debug APK
         run: gradle assembleDebug --no-daemon
 
