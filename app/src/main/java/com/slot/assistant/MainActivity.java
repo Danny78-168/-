@@ -56,7 +56,7 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        // 預設開啟 MT 百家
+        // 預設載入 MT 百家
         webView.loadUrl("https://www.osc169.com/#/game/play?game_name=meta_all&game_type=3&device=mobile");
     }
 
@@ -64,39 +64,38 @@ public class MainActivity extends AppCompatActivity {
         String js = "javascript:(function() {" +
             "if (document.getElementById('slot-assistant-hud')) return;" +
 
-            // 建立懸浮 HUD 介面
             "var hud = document.createElement('div');" +
             "hud.id = 'slot-assistant-hud';" +
             "hud.style.cssText = 'position:fixed;top:45px;right:8px;width:250px;background:#0b1120;border:1px solid #38bdf8;border-radius:10px;z-index:999999;color:#e2e8f0;font-size:12px;box-shadow:0 8px 24px rgba(0,0,0,0.85);font-family:sans-serif;user-select:none;';" +
             "hud.innerHTML = " +
                 "'<div id=\"hud_header\" style=\"padding:10px 12px;background:#1e293b;border-radius:10px 10px 0 0;font-weight:bold;color:#38bdf8;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #334155;cursor:move;touch-action:none;\">" +
-                    "<span>⚡ AI 自動感應預測助手</span>" +
+                    "<span>⚡ 引路人</span>" +
                     "<span id=\"hud_tog\" style=\"cursor:pointer;color:#94a3b8;font-size:11px;\">[收合]</span>" +
                 "</div>' +" +
                 "'<div id=\"hud_content\" style=\"padding:12px;\">' +" +
-                    // 大廳快捷切換
+                    // 頂部遊戲大廳切換
                     "'<div style=\"display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:8px;\">" +
                         "<button onclick=\"location.href=\\'https://www.osc169.com/#/game/play?game_name=meta_all&game_type=3&device=mobile\\'\" style=\"background:#0f172a;border:1px solid #38bdf8;color:#38bdf8;padding:4px 0;border-radius:4px;font-size:10px;font-weight:bold;\">MT 百家</button>" +
                         "<button onclick=\"location.href=\\'https://www.osc169.com/#/game/play?game_name=dg&game_type=3&device=mobile\\'\" style=\"background:#0f172a;border:1px solid #475569;color:#e2e8f0;padding:4px 0;border-radius:4px;font-size:10px;\">DG 百家</button>" +
                     "</div>' +" +
-                    // 自動連線狀態看板
+                    // 自動感應狀態
                     "'<div style=\"background:#020617;border:1px solid #1e293b;border-radius:6px;padding:8px;margin-bottom:8px;\">" +
                         "<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;\">" +
-                            "<span style=\"color:#94a3b8;font-size:11px;\">路單狀態:</span>" +
-                            "<b id=\"sync_status\" style=\"color:#4ade80;font-size:11px;\">🟢 自動即時同步中</b>" +
+                            "<span style=\"color:#94a3b8;font-size:11px;\">路單監測:</span>" +
+                            "<b id=\"sync_status\" style=\"color:#4ade80;font-size:11px;\">🟢 即時同步中</b>" +
                         "</div>" +
                         "<div style=\"display:flex;justify-content:space-between;font-size:11px;\">" +
                             "<span>已讀取局數: <b id=\"auto_total\" style=\"color:#fff;\">0</b></span>" +
                             "<span>莊/閒/和: <b id=\"auto_stat\" style=\"color:#fff;\">0/0/0</b></span>" +
                         "</div>" +
                     "</div>' +" +
-                    // AI 核心下一顆推薦卡片
+                    // AI 核心推薦卡片
                     "'<div style=\"background:#0f172a;border:1px solid #3b82f6;border-radius:8px;padding:10px;text-align:center;margin-bottom:8px;\">" +
-                        "<div style=\"color:#94a3b8;font-size:11px;margin-bottom:2px;\">🎯 AI 下一手強推決策</div>" +
+                        "<div style=\"color:#94a3b8;font-size:11px;margin-bottom:2px;\">🎯 下一手決策推薦</div>" +
                         "<div id=\"ai_master_pick\" style=\"font-size:1.6rem;font-weight:900;color:#ef4444;margin:2px 0;\">分析中...</div>" +
                         "<div id=\"ai_master_desc\" style=\"font-size:11px;color:#38bdf8;\">正在掃描開牌路單...</div>" +
                     "</div>' +" +
-                    // 雙模型分項細節
+                    // 雙模型數值分析
                     "'<div style=\"font-size:11px;background:#020617;border-radius:6px;padding:8px;border:1px solid #1e293b;\">" +
                         "<div style=\"display:flex;justify-content:space-between;margin-bottom:4px;\">" +
                             "<span style=\"color:#10b981;\">OpenAI (動量追隨):</span>" +
@@ -107,7 +106,6 @@ public class MainActivity extends AppCompatActivity {
                             "<b id=\"m_gemini\">閒 (50%)</b>" +
                         "</div>" +
                     "</div>' +" +
-                    // 底部手動重校按鈕（備用）
                     "'<div style=\"display:flex;justify-content:space-between;align-items:center;margin-top:8px;\">" +
                         "<span id=\"last_seen_road\" style=\"color:#64748b;font-size:10px;overflow:hidden;white-space:nowrap;max-width:160px;\">等待新局...</span>" +
                         "<button id=\"btn_resync\" style=\"background:none;border:1px solid #475569;color:#94a3b8;font-size:10px;padding:2px 6px;border-radius:3px;cursor:pointer;\">強制刷新</button>" +
@@ -140,18 +138,17 @@ public class MainActivity extends AppCompatActivity {
             "}, { passive: true });" +
             "header.addEventListener('touchend', function() { isDrag = false; });" +
 
-            // ==================== 核心：自動讀取與 AI 決策引擎 ====================
+            // AI 決策計算引擎
             "var shoeRoad = [];" +
             "var bCount = 0, pCount = 0, tCount = 0;" +
 
-            // AI 決策運算核心
             "function computeAIDecision() {" +
             "  if (shoeRoad.length === 0 && (bCount + pCount) === 0) return;" +
             "  var total = bCount + pCount + tCount;" +
             "  document.getElementById('auto_total').innerText = total;" +
             "  document.getElementById('auto_stat').innerText = bCount + '/' + pCount + '/' + tCount;" +
 
-            // 1. OpenAI 趨勢動量模型（看大路連勝 / 順勢追龍）
+            // OpenAI 趨勢動量模型
             "  var lastWin = shoeRoad.length > 0 ? shoeRoad[shoeRoad.length - 1] : (bCount >= pCount ? 'B' : 'P');" +
             "  var streak = 0;" +
             "  for (var i = shoeRoad.length - 1; i >= 0; i--) {" +
@@ -166,7 +163,7 @@ public class MainActivity extends AppCompatActivity {
             "    openConf = 54 + (total % 8);" +
             "  }" +
 
-            // 2. Gemini 均值回歸模型（看統計方差 / 斬龍對沖）
+            // Gemini 均值回歸模型
             "  var geminiTarget = '閒', geminiConf = 52;" +
             "  var delta = Math.abs(bCount - pCount);" +
             "  if (bCount > pCount + 2) {" +
@@ -180,11 +177,10 @@ public class MainActivity extends AppCompatActivity {
             "    geminiConf = 58 + (total % 6);" +
             "  }" +
 
-            // 更新模型指示
             "  document.getElementById('m_openai').innerHTML = '<span style=\"color:' + (openTarget==='莊'?'#ef4444':'#3b82f6') + '\">' + openTarget + ' (' + openConf + '%)</span>';" +
             "  document.getElementById('m_gemini').innerHTML = '<span style=\"color:' + (geminiTarget==='莊'?'#ef4444':'#3b82f6') + '\">' + geminiTarget + ' (' + geminiConf + '%)</span>';" +
 
-            // 3. 綜合大模型共識裁決
+            // 綜合決策裁決
             "  var pickElem = document.getElementById('ai_master_pick');" +
             "  var descElem = document.getElementById('ai_master_desc');" +
             "  if (openTarget === geminiTarget) {" +
@@ -202,7 +198,7 @@ public class MainActivity extends AppCompatActivity {
             "  document.getElementById('last_seen_road').innerText = '最新：' + (shoeRoad.slice(-6).join(' ') || '連線中');" +
             "}" +
 
-            // ==================== 自動讀取模組 1：WebSocket 封包攔截 ====================
+            // WebSocket 封包攔截
             "try {" +
             "  var OrigWS = window.WebSocket;" +
             "  window.WebSocket = function(url, protocols) {" +
@@ -210,13 +206,11 @@ public class MainActivity extends AppCompatActivity {
             "    ws.addEventListener('message', function(event) {" +
             "      try {" +
             "        var str = event.data;" +
-            "        if (typeof str === 'string') {" +
-            "          if (str.includes('banker') || str.includes('player') || str.includes('result') || str.includes('road')) {" +
-            "            var data = JSON.parse(str);" +
-            "            if (data.result === 'B' || data.winner === 'banker') { shoeRoad.push('B'); bCount++; computeAIDecision(); }" +
-            "            else if (data.result === 'P' || data.winner === 'player') { shoeRoad.push('P'); pCount++; computeAIDecision(); }" +
-            "            else if (data.result === 'T' || data.winner === 'tie') { shoeRoad.push('T'); tCount++; computeAIDecision(); }" +
-            "          }" +
+            "        if (typeof str === 'string' && (str.includes('banker') || str.includes('player') || str.includes('result') || str.includes('road'))) {" +
+            "          var data = JSON.parse(str);" +
+            "          if (data.result === 'B' || data.winner === 'banker') { shoeRoad.push('B'); bCount++; computeAIDecision(); }" +
+            "          else if (data.result === 'P' || data.winner === 'player') { shoeRoad.push('P'); pCount++; computeAIDecision(); }" +
+            "          else if (data.result === 'T' || data.winner === 'tie') { shoeRoad.push('T'); tCount++; computeAIDecision(); }" +
             "        }" +
             "      } catch(e) {}" +
             "    });" +
@@ -224,15 +218,13 @@ public class MainActivity extends AppCompatActivity {
             "  };" +
             "} catch(e) {}" +
 
-            // ==================== 自動讀取模組 2：DOM 畫面文字即時輪詢掃描 ====================
+            // DOM 畫面文字與珠盤路輪詢
             "function scanScreenDOM() {" +
             "  try {" +
             "    var allText = document.body.innerText || '';" +
-            // 掃描畫面上的統計特徵文字：莊 xx、閒 xx、和 xx、總數 xx
             "    var matchB = allText.match(/莊\\s*(\\d+)/);" +
             "    var matchP = allText.match(/閒\\s*(\\d+)/);" +
             "    var matchT = allText.match(/和\\s*(\\d+)/);" +
-            "    var matchTotal = allText.match(/總數\\s*(\\d+)/);" +
 
             "    if (matchB && matchP) {" +
             "      var parsedB = parseInt(matchB[1], 10);" +
@@ -246,7 +238,6 @@ public class MainActivity extends AppCompatActivity {
             "      }" +
             "    }" +
 
-            // 掃描珠盤路 DOM 圓點元素
             "    var beads = document.querySelectorAll('[class*=\"bead\"], [class*=\"road\"], [class*=\"dot\"]');" +
             "    if (beads && beads.length > 5) {" +
             "      var tempRoad = [];" +
@@ -265,7 +256,6 @@ public class MainActivity extends AppCompatActivity {
             "  } catch(e) {}" +
             "}" +
 
-            // 每 1.2 秒自動掃描畫面一次
             "setInterval(scanScreenDOM, 1200);" +
             "document.getElementById('btn_resync').onclick = function() { scanScreenDOM(); computeAIDecision(); };" +
             "scanScreenDOM();" +
