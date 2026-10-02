@@ -49,11 +49,11 @@ public class MainActivity extends AppCompatActivity {
 
         settings.setUserAgentString("Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36");
 
-        // 原生換台通道：延遲 350ms 後重載，確保新網址順利載入
+        // 原生換台通道
         webView.addJavascriptInterface(new Object() {
             @JavascriptInterface
             public void switchGame(final String targetUrl) {
-                runOnUiThread(new Runnable() {
+                MainActivity.this.runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
                         webView.loadUrl(targetUrl);
@@ -62,7 +62,7 @@ public class MainActivity extends AppCompatActivity {
                             public void run() {
                                 webView.reload();
                             }
-                        }, 350);
+                        }, 250);
                     }
                 });
             }
@@ -77,13 +77,11 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        // 預設開啟 MT 百家
         webView.loadUrl("https://www.osc169.com/#/game/play?game_name=meta_all&game_type=3&device=mobile");
     }
 
     private void injectAssistantScript(WebView view) {
         String js = "javascript:(function() {" +
-            // ================= 1. 表單自動同步器 (防止登入卡住) =================
             "function syncInputs() {" +
             "  var active = document.activeElement;" +
             "  if (active && active.tagName === 'INPUT') return;" +
@@ -97,7 +95,6 @@ public class MainActivity extends AppCompatActivity {
             "  }" +
             "}" +
             "setInterval(syncInputs, 500);" +
-
             "if (!window._loginBound) {" +
             "  window._loginBound = true;" +
             "  document.addEventListener('click', function(e) {" +
@@ -105,14 +102,11 @@ public class MainActivity extends AppCompatActivity {
             "    if (el && (el.innerText || '').indexOf('登入') !== -1) {" +
             "      syncInputs();" +
             "      var inps = document.querySelectorAll('input');" +
-            "      for (var i = 0; i < inps.length; i++) {" +
-            "        inps[i].dispatchEvent(new Event('blur', { bubbles: true }));" +
-            "      }" +
+            "      for (var i = 0; i < inps.length; i++) inps[i].dispatchEvent(new Event('blur', { bubbles: true }));" +
             "    }" +
             "  }, true);" +
             "}" +
 
-            // ================= 2. 懸浮引路人 HUD 面板 =================
             "if (document.getElementById('slot-assistant-hud')) return;" +
             "var hud = document.createElement('div');" +
             "hud.id = 'slot-assistant-hud';" +
@@ -127,7 +121,6 @@ public class MainActivity extends AppCompatActivity {
                     "</div>" +
                 "</div>' +" +
                 "'<div id=\"hud_content\" style=\"padding:10px;\">' +" +
-                    // 百家樂模組
                     "'<div id=\"p_bac\">' +" +
                         "'<div style=\"display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:8px;\">" +
                             "<button id=\"nav_mt\" style=\"background:#0f172a;border:1px solid #38bdf8;color:#38bdf8;padding:3px 0;border-radius:3px;font-size:10px;font-weight:bold;cursor:pointer;\">MT 百家</button>" +
@@ -143,7 +136,6 @@ public class MainActivity extends AppCompatActivity {
                             "<span id=\"hud_sync_dot\" style=\"color:#4ade80;\">● 連線</span>" +
                         "</div>' +" +
                     "'</div>' +" +
-                    // 老虎機模組
                     "'<div id=\"p_slt\" style=\"display:none;\">' +" +
                         "'<div style=\"display:grid;grid-template-columns:repeat(3, 1fr);gap:3px;margin-bottom:8px;\">" +
                             "<button id=\"nav_atg\" style=\"background:#0f172a;border:1px solid #475569;color:#fff;padding:3px 0;border-radius:3px;font-size:9px;cursor:pointer;\">虎小妹</button>" +
@@ -165,7 +157,6 @@ public class MainActivity extends AppCompatActivity {
                 "'</div>';" +
             "document.body.appendChild(hud);" +
 
-            // 收合功能
             "var tog = document.getElementById('hud_tog');" +
             "var cnt = document.getElementById('hud_content');" +
             "tog.onclick = function(e) {" +
@@ -174,7 +165,6 @@ public class MainActivity extends AppCompatActivity {
             "  else { cnt.style.display = 'none'; tog.innerText = '[展]'; }" +
             "};" +
 
-            // 觸控拖曳
             "var header = document.getElementById('hud_header');" +
             "var isDrag = false, sX, sY, iL, iT;" +
             "header.addEventListener('touchstart', function(e) {" +
@@ -190,7 +180,6 @@ public class MainActivity extends AppCompatActivity {
             "}, { passive: false });" +
             "header.addEventListener('touchend', function() { isDrag = false; });" +
 
-            // 分頁切換
             "var tB = document.getElementById('tab_bac');" +
             "var tS = document.getElementById('tab_slt');" +
             "var pB = document.getElementById('p_bac');" +
@@ -209,13 +198,11 @@ public class MainActivity extends AppCompatActivity {
             "tB.onclick = function(e) { e.stopPropagation(); setTab('bac'); };" +
             "tS.onclick = function(e) { e.stopPropagation(); setTab('slt'); };" +
 
-            // 換台導航調用原生 Android 通道
             "function navTo(url) {" +
             "  if (window.AndroidBridge && window.AndroidBridge.switchGame) {" +
             "    window.AndroidBridge.switchGame(url);" +
             "  } else {" +
-            "    window.location.href = url;" +
-            "    setTimeout(function() { window.location.reload(); }, 200);" +
+            "    location.href = url;" +
             "  }" +
             "}" +
             "document.getElementById('nav_mt').onclick = function(e) { e.stopPropagation(); navTo('https://www.osc169.com/#/game/play?game_name=meta_all&game_type=3&device=mobile'); };" +
@@ -227,7 +214,6 @@ public class MainActivity extends AppCompatActivity {
             "var isSlot = location.href.indexOf('tiger-princess') !== -1 || location.href.indexOf('productId=129') !== -1 || location.href.indexOf('avatar') !== -1;" +
             "if (isSlot) setTab('slt'); else setTab('bac');" +
 
-            // ================= 3. 老虎機計算邏輯 =================
             "var slotConfigs = {" +
             "  atg: [{ label: '200x', mult: 200 }, { label: '500x', mult: 500 }, { label: '2000x', mult: 2000 }]," +
             "  rsg: [{ label: '免遊 100x', mult: 100 }]," +
@@ -236,7 +222,6 @@ public class MainActivity extends AppCompatActivity {
             "var curSlot = 'atg';" +
             "if (location.href.indexOf('productId=129') !== -1) curSlot = 'rsg';" +
             "else if (location.href.indexOf('avatar') !== -1) curSlot = 'ava';" +
-
             "var curMult = slotConfigs[curSlot][0].mult;" +
             "var betInp = document.getElementById('s_bet');" +
 
@@ -274,66 +259,77 @@ public class MainActivity extends AppCompatActivity {
             "renderSlotButtons();" +
             "updateSlotCalc();" +
 
-            // ================= 4. 百家樂純文字自適應安全解析引擎 =================
             "var lastB = -1, lastP = -1, lastT = -1, lastTot = -1;" +
-
             "function scanGameData() {" +
             "  try {" +
             "    var active = document.activeElement;" +
             "    if (active && active.tagName === 'INPUT') return;" +
-
-            "    var txt = '';" +
-            "    if (document.body) txt = document.body.innerText || '';" +
+            "    var raw = '';" +
+            "    if (document.body) raw = document.body.innerText || '';" +
             "    try {" +
             "      var ifrs = document.getElementsByTagName('iframe');" +
-            "      for (var i = 0; i < ifrs.length; i++) {" +
+            "      for (var k = 0; k < ifrs.length; k++) {" +
             "        try {" +
-            "          var d = ifrs[i].contentDocument || ifrs[i].contentWindow.document;" +
-            "          if (d && d.body) txt += ' ' + d.body.innerText;" +
+            "          var d = ifrs[k].contentDocument || ifrs[k].contentWindow.document;" +
+            "          if (d && d.body) raw += ' ' + d.body.innerText;" +
             "        } catch(e) {}" +
             "      }" +
             "    } catch(e) {}" +
-
-            "    if (!txt) return;" +
-
+            "    if (!raw) return;" +
+            "    var txt = raw.replace(/\\d+\\s*:\\s*[\\d.]+/g, '');" +
             "    var b = -1, p = -1, t = 0, tot = -1;" +
-
-            // 模式 A：牌桌內底欄模式 (如截圖 19: 莊 25 閒 24 和 3 莊對 3 閒對 1 總數 52)
-            "    var mTable = txt.match(/莊\\s*(\\d+)[\\s\\S]{1,50}?閒\\s*(\\d+)[\\s\\S]{1,50}?和\\s*(\\d+)[\\s\\S]{1,80}?總數\\s*(\\d+)/);" +
+            "    var mTable = txt.match(/莊\\s*(\\d+)[\\s\\S]*?閒\\s*(\\d+)[\\s\\S]*?和\\s*(\\d+)[\\s\\S]*?總數\\s*(\\d+)/);" +
             "    if (mTable) {" +
-            "      b = parseInt(mTable[1], 10);" +
-            "      p = parseInt(mTable[2], 10);" +
-            "      t = parseInt(mTable[3], 10);" +
-            "      tot = parseInt(mTable[4], 10);" +
+            "      b = parseInt(mTable[1], 10); p = parseInt(mTable[2], 10); t = parseInt(mTable[3], 10); tot = parseInt(mTable[4], 10);" +
             "    } else {" +
-            // 模式 B：大廳卡片模式 (如截圖 18: 局數 52 莊 25 閒 24 和 3)
-            "      var mLobby = txt.match(/局數\\s*(\\d+)[\\s\\S]{1,40}?莊\\s*(\\d+)[\\s\\S]{1,30}?閒\\s*(\\d+)[\\s\\S]{1,30}?和\\s*(\\d+)/);" +
+            "      var mLobby = txt.match(/局數\\s*(\\d+)[\\s\\S]*?莊\\s*(\\d+)[\\s\\S]*?閒\\s*(\\d+)[\\s\\S]*?和\\s*(\\d+)/);" +
             "      if (mLobby) {" +
-            "        tot = parseInt(mLobby[1], 10);" +
-            "        b = parseInt(mLobby[2], 10);" +
-            "        p = parseInt(mLobby[3], 10);" +
-            "        t = parseInt(mLobby[4], 10);" +
+            "        tot = parseInt(mLobby[1], 10); b = parseInt(mLobby[2], 10); p = parseInt(mLobby[3], 10); t = parseInt(mLobby[4], 10);" +
             "      } else {" +
-            // 模式 C：兜底彈性模式 (過濾賠率 1:1, 1:8, 1:0.95)
-            "        var mFlex = txt.match(/莊\\s*(\\d+)[\\s\\S]{1,30}?閒\\s*(\\d+)[\\s\\S]{1,30}?和\\s*(\\d+)/);" +
+            "        var mFlex = txt.match(/莊\\s*(\\d+)[\\s\\S]*?閒\\s*(\\d+)[\\s\\S]*?和\\s*(\\d+)/);" +
             "        if (mFlex) {" +
-            "          var tb = parseInt(mFlex[1], 10), tp = parseInt(mFlex[2], 10), tt = parseInt(mFlex[3], 10);" +
-            "          if (!(tb === 1 && tp === 1 && tt === 1) && (tb + tp) > 0) {" +
-            "            b = tb; p = tp; t = tt; tot = b + p + t;" +
-            "          }" +
+            "          b = parseInt(mFlex[1], 10); p = parseInt(mFlex[2], 10); t = parseInt(mFlex[3], 10); tot = b + p + t;" +
             "        }" +
             "      }" +
             "    }" +
-
             "    if (b !== -1 && p !== -1 && (b + p + t) > 0) {" +
             "      if (tot <= 0) tot = b + p + t;" +
             "      if (b !== lastB || p !== lastP || t !== lastT || tot !== lastTot) {" +
             "        lastB = b; lastP = p; lastT = t; lastTot = tot;" +
             "        var delta = p - b;" +
             "        var pick = '莊', conf = 60, reason = '';" +
-
-            // AI 雙模型決策運算 (均值修正 + 動量平衡)
             "        if (delta >= 3) {" +
-            "          pick = '莊'; conf = Math.min(88, 62 + delta * 4);" +
-            "          reason = '閒領先 ' + delta + ' 局 (均值修正)';" +
-            "        } else if (delta <= -
+            "          pick = '莊'; conf = Math.min(88, 62 + delta * 4); reason = '閒領先 ' + delta + ' 局 (均值修正)';" +
+            "        } else if (delta <= -3) {" +
+            "          pick = '閒'; conf = Math.min(88, 62 + Math.abs(delta) * 4); reason = '莊領先 ' + Math.abs(delta) + ' 局 (均值修正)';" +
+            "        } else {" +
+            "          pick = (b >= p) ? '莊' : '閒'; conf = 58 + (tot % 6); reason = '動量趨勢推薦';" +
+            "        }" +
+            "        var tElem = document.getElementById('ai_pick_target');" +
+            "        var dElem = document.getElementById('ai_pick_desc');" +
+            "        var sElem = document.getElementById('hud_score');" +
+            "        if (tElem) {" +
+            "          tElem.innerText = '【' + pick + '】 ' + conf + '%';" +
+            "          tElem.style.color = (pick === '莊') ? '#ef4444' : '#3b82f6';" +
+            "        }" +
+            "        if (dElem) dElem.innerText = reason;" +
+            "        if (sElem) sElem.innerText = '莊' + b + ' 閒' + p + ' 和' + t + ' (' + tot + '局)';" +
+            "      }" +
+            "    }" +
+            "  } catch(e) {}" +
+            "}" +
+            "setInterval(scanGameData, 600);" +
+            "scanGameData();" +
+            "})();";
+         view.evaluateJavascript(js, null);
+    }
+
+    @Override
+    public void onBackPressed() {
+        if (webView.canGoBack()) {
+            webView.goBack();
+        } else {
+            super.onBackPressed();
+        }
+    }
+}
