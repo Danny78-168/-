@@ -64,6 +64,35 @@ public class MainActivity extends AppCompatActivity {
         String js = "javascript:(function() {" +
             "if (document.getElementById('slot-assistant-hud')) return;" +
 
+            // 1. 安全攔截 WebSocket，完整保留靜態屬性與原型鏈
+            "try {" +
+            "  if (!window._origWS) {" +
+            "    window._origWS = window.WebSocket;" +
+            "    var SafeWS = function(url, protocols) {" +
+            "      var ws = protocols ? new window._origWS(url, protocols) : new window._origWS(url);" +
+            "      ws.addEventListener('message', function(event) {" +
+            "        try {" +
+            "          var str = event.data;" +
+            "          if (typeof str === 'string' && (str.includes('banker') || str.includes('player') || str.includes('result'))) {" +
+            "            var data = JSON.parse(str);" +
+            "            if (data.result === 'B' || data.winner === 'banker') { shoeRoad.push('B'); bCount++; computeAIDecision(); }" +
+            "            else if (data.result === 'P' || data.winner === 'player') { shoeRoad.push('P'); pCount++; computeAIDecision(); }" +
+            "            else if (data.result === 'T' || data.winner === 'tie') { shoeRoad.push('T'); tCount++; computeAIDecision(); }" +
+            "          }" +
+            "        } catch(e) {}" +
+            "      });" +
+            "      return ws;" +
+            "    };" +
+            "    SafeWS.prototype = window._origWS.prototype;" +
+            "    SafeWS.CONNECTING = window._origWS.CONNECTING;" +
+            "    SafeWS.OPEN = window._origWS.OPEN;" +
+            "    SafeWS.CLOSING = window._origWS.CLOSING;" +
+            "    SafeWS.CLOSED = window._origWS.CLOSED;" +
+            "    window.WebSocket = SafeWS;" +
+            "  }" +
+            "} catch(e) {}" +
+
+            // 2. 建立引路人 HUD 介面
             "var hud = document.createElement('div');" +
             "hud.id = 'slot-assistant-hud';" +
             "hud.style.cssText = 'position:fixed;top:45px;right:8px;width:250px;background:#0b1120;border:1px solid #38bdf8;border-radius:10px;z-index:999999;color:#e2e8f0;font-size:12px;box-shadow:0 8px 24px rgba(0,0,0,0.85);font-family:sans-serif;user-select:none;';" +
@@ -73,12 +102,10 @@ public class MainActivity extends AppCompatActivity {
                     "<span id=\"hud_tog\" style=\"cursor:pointer;color:#94a3b8;font-size:11px;\">[收合]</span>" +
                 "</div>' +" +
                 "'<div id=\"hud_content\" style=\"padding:12px;\">' +" +
-                    // 頂部遊戲大廳切換
                     "'<div style=\"display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:8px;\">" +
                         "<button onclick=\"location.href=\\'https://www.osc169.com/#/game/play?game_name=meta_all&game_type=3&device=mobile\\'\" style=\"background:#0f172a;border:1px solid #38bdf8;color:#38bdf8;padding:4px 0;border-radius:4px;font-size:10px;font-weight:bold;\">MT 百家</button>" +
                         "<button onclick=\"location.href=\\'https://www.osc169.com/#/game/play?game_name=dg&game_type=3&device=mobile\\'\" style=\"background:#0f172a;border:1px solid #475569;color:#e2e8f0;padding:4px 0;border-radius:4px;font-size:10px;\">DG 百家</button>" +
                     "</div>' +" +
-                    // 自動感應狀態
                     "'<div style=\"background:#020617;border:1px solid #1e293b;border-radius:6px;padding:8px;margin-bottom:8px;\">" +
                         "<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;\">" +
                             "<span style=\"color:#94a3b8;font-size:11px;\">路單監測:</span>" +
@@ -89,13 +116,11 @@ public class MainActivity extends AppCompatActivity {
                             "<span>莊/閒/和: <b id=\"auto_stat\" style=\"color:#fff;\">0/0/0</b></span>" +
                         "</div>" +
                     "</div>' +" +
-                    // AI 核心推薦卡片
                     "'<div style=\"background:#0f172a;border:1px solid #3b82f6;border-radius:8px;padding:10px;text-align:center;margin-bottom:8px;\">" +
                         "<div style=\"color:#94a3b8;font-size:11px;margin-bottom:2px;\">🎯 下一手決策推薦</div>" +
                         "<div id=\"ai_master_pick\" style=\"font-size:1.6rem;font-weight:900;color:#ef4444;margin:2px 0;\">分析中...</div>" +
                         "<div id=\"ai_master_desc\" style=\"font-size:11px;color:#38bdf8;\">正在掃描開牌路單...</div>" +
                     "</div>' +" +
-                    // 雙模型數值分析
                     "'<div style=\"font-size:11px;background:#020617;border-radius:6px;padding:8px;border:1px solid #1e293b;\">" +
                         "<div style=\"display:flex;justify-content:space-between;margin-bottom:4px;\">" +
                             "<span style=\"color:#10b981;\">OpenAI (動量追隨):</span>" +
@@ -148,7 +173,6 @@ public class MainActivity extends AppCompatActivity {
             "  document.getElementById('auto_total').innerText = total;" +
             "  document.getElementById('auto_stat').innerText = bCount + '/' + pCount + '/' + tCount;" +
 
-            // OpenAI 趨勢動量模型
             "  var lastWin = shoeRoad.length > 0 ? shoeRoad[shoeRoad.length - 1] : (bCount >= pCount ? 'B' : 'P');" +
             "  var streak = 0;" +
             "  for (var i = shoeRoad.length - 1; i >= 0; i--) {" +
@@ -163,7 +187,6 @@ public class MainActivity extends AppCompatActivity {
             "    openConf = 54 + (total % 8);" +
             "  }" +
 
-            // Gemini 均值回歸模型
             "  var geminiTarget = '閒', geminiConf = 52;" +
             "  var delta = Math.abs(bCount - pCount);" +
             "  if (bCount > pCount + 2) {" +
@@ -180,7 +203,6 @@ public class MainActivity extends AppCompatActivity {
             "  document.getElementById('m_openai').innerHTML = '<span style=\"color:' + (openTarget==='莊'?'#ef4444':'#3b82f6') + '\">' + openTarget + ' (' + openConf + '%)</span>';" +
             "  document.getElementById('m_gemini').innerHTML = '<span style=\"color:' + (geminiTarget==='莊'?'#ef4444':'#3b82f6') + '\">' + geminiTarget + ' (' + geminiConf + '%)</span>';" +
 
-            // 綜合決策裁決
             "  var pickElem = document.getElementById('ai_master_pick');" +
             "  var descElem = document.getElementById('ai_master_desc');" +
             "  if (openTarget === geminiTarget) {" +
@@ -198,29 +220,10 @@ public class MainActivity extends AppCompatActivity {
             "  document.getElementById('last_seen_road').innerText = '最新：' + (shoeRoad.slice(-6).join(' ') || '連線中');" +
             "}" +
 
-            // WebSocket 封包攔截
-            "try {" +
-            "  var OrigWS = window.WebSocket;" +
-            "  window.WebSocket = function(url, protocols) {" +
-            "    var ws = protocols ? new OrigWS(url, protocols) : new OrigWS(url);" +
-            "    ws.addEventListener('message', function(event) {" +
-            "      try {" +
-            "        var str = event.data;" +
-            "        if (typeof str === 'string' && (str.includes('banker') || str.includes('player') || str.includes('result') || str.includes('road'))) {" +
-            "          var data = JSON.parse(str);" +
-            "          if (data.result === 'B' || data.winner === 'banker') { shoeRoad.push('B'); bCount++; computeAIDecision(); }" +
-            "          else if (data.result === 'P' || data.winner === 'player') { shoeRoad.push('P'); pCount++; computeAIDecision(); }" +
-            "          else if (data.result === 'T' || data.winner === 'tie') { shoeRoad.push('T'); tCount++; computeAIDecision(); }" +
-            "        }" +
-            "      } catch(e) {}" +
-            "    });" +
-            "    return ws;" +
-            "  };" +
-            "} catch(e) {}" +
-
-            // DOM 畫面文字與珠盤路輪詢
+            // DOM 畫面文字輪詢：偵測到登入輸入框時自動暫停，避免干擾表單
             "function scanScreenDOM() {" +
             "  try {" +
+            "    if (document.querySelector('input[type=\"password\"]')) return;" +
             "    var allText = document.body.innerText || '';" +
             "    var matchB = allText.match(/莊\\s*(\\d+)/);" +
             "    var matchP = allText.match(/閒\\s*(\\d+)/);" +
@@ -256,7 +259,7 @@ public class MainActivity extends AppCompatActivity {
             "  } catch(e) {}" +
             "}" +
 
-            "setInterval(scanScreenDOM, 1200);" +
+            "setInterval(scanScreenDOM, 1500);" +
             "document.getElementById('btn_resync').onclick = function() { scanScreenDOM(); computeAIDecision(); };" +
             "scanScreenDOM();" +
             "})();";
