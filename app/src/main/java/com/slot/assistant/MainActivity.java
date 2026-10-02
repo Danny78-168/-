@@ -117,7 +117,7 @@ public class MainActivity extends AppCompatActivity {
                         return;
                     }
 
-                    // 寬度等比縮放至 540px，兼顧解析度與傳輸效率
+                    // 寬度等比縮放至 540px，兼顧辨識精準度與傳輸速度
                     float scale = 540f / w;
                     int targetW = 540;
                     int targetH = (int) (h * scale);
@@ -154,7 +154,7 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    // 最新 POST /v1/responses (gpt-6-sol) 推理引擎
+    // 呼叫 POST /v1/responses (gpt-6-sol) 強制二選一精算
     private String callOpenAIResponses(String base64Image) throws Exception {
         URL url = new URL("https://api.openai.com/v1/responses");
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -169,32 +169,28 @@ public class MainActivity extends AppCompatActivity {
         jsonBody.put("model", "gpt-6-sol");
         jsonBody.put("service_tier", "default");
 
-        // input 結構
         JSONArray inputArray = new JSONArray();
         JSONObject inputItem = new JSONObject();
         inputItem.put("role", "user");
 
         JSONArray contentArray = new JSONArray();
 
-        // 提示詞物件 (input_text)
+        // 核心演算法：強制二選一，禁止輸出觀望
         JSONObject textObj = new JSONObject();
         textObj.put("type", "input_text");
-        String prompt = "你是職業百家樂走勢精算師，精通大路、珠盤路、下三路與均值回歸。\n" +
-                "請嚴格依據截圖進行推論：\n" +
-                "1.【讀取數據】：辨識底部比分（莊、閒、和、總數）。\n" +
-                "2.【形態識別】：\n" +
-                "   - 長龍形態（連續3手以上同側）：優先順龍跟進。\n" +
-                "   - 單跳形態（規律交替）：順跳操作。\n" +
-                "   - 均值偏差：若莊閒差值 >= 4，可考慮反向回歸。\n" +
-                "3.【提高勝率的核心原則 - 寧缺毋濫】：\n" +
-                "   - 若走勢紊亂、無明確長龍或單跳規律，果斷輸出【觀望】，信心度標示 50%。\n" +
-                "   - 僅在走勢明確時推薦【莊】或【閒】，信心度給予 70%~92%。\n" +
-                "4.【輸出限制】：只能輸出純 JSON 物件，格式如下：\n" +
-                "{\"pick\":\"莊\"/\"閒\"/\"觀望\",\"conf\":78,\"reason\":\"長龍延續/單跳順勢/局勢雜亂觀望\",\"stats\":\"莊X 閒Y 和Z (N局)\"}";
+        String prompt = "你是職業百家樂走勢精算系統。請觀察截圖底部的比分數據（莊、閒、和、總數）與珠盤路、大路走向。\n" +
+                "【重要鐵律】：\n" +
+                "1. 嚴禁輸出「觀望」或「和」！每一局必須在【莊】與【閒】中強制二選一！\n" +
+                "2. 決策演算權重：\n" +
+                "   - 均值回歸（最高權重）：觀察莊與閒的比分差。若一方領先超過 2 局（如閒21 莊16，閒領先5局），優先推斷大數定律均值回歸落後方。\n" +
+                "   - 形態跟勢：若盤面最新為連續同側則順龍；若為跳開規律則順單跳。\n" +
+                "   - 基準防守：若局面完全均等無從判定，以莊家天然數學優勢推薦【莊】。\n" +
+                "3. 信心度請精確評估在 60% 至 90% 之間，並附上 12 字以內的明確理由。\n" +
+                "4. 嚴格僅回傳純 JSON 物件：\n" +
+                "{\"pick\":\"莊\",\"conf\":78,\"reason\":\"閒領先5局，均值強烈回歸\",\"stats\":\"莊16 閒21 和8 (45局)\"}";
         textObj.put("text", prompt);
         contentArray.put(textObj);
 
-        // 截圖物件 (input_image)
         JSONObject imgObj = new JSONObject();
         imgObj.put("type", "input_image");
         imgObj.put("image_url", "data:image/jpeg;base64," + base64Image);
@@ -221,11 +217,9 @@ public class MainActivity extends AppCompatActivity {
         return extractJsonFromResponse(sb.toString());
     }
 
-    // 智慧解析器：自動適配 Responses API 的 output 格式與一般文本
     private String extractJsonFromResponse(String responseText) {
         try {
             JSONObject root = new JSONObject(responseText);
-            // 嘗試讀取 Responses API 的 output 節點
             if (root.has("output")) {
                 JSONArray output = root.getJSONArray("output");
                 for (int i = 0; i < output.length(); i++) {
@@ -242,14 +236,12 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
             }
-            // 嘗試讀取 choices 節點相容格式
             if (root.has("choices")) {
                 String c = root.getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content");
                 return cleanJson(c);
             }
         } catch (Exception ignored) {}
 
-        // 通用降級解析：直接於原始字串中搜尋 JSON 物件
         return cleanJson(responseText);
     }
 
@@ -270,9 +262,9 @@ public class MainActivity extends AppCompatActivity {
             public void run() {
                 try {
                     JSONObject obj = new JSONObject(jsonStr);
-                    String pick = obj.optString("pick", "觀望");
-                    int conf = obj.optInt("conf", 50);
-                    String reason = obj.optString("reason", "局勢震盪");
+                    String pick = obj.optString("pick", "莊");
+                    int conf = obj.optInt("conf", 65);
+                    String reason = obj.optString("reason", "趨勢推論");
                     String stats = obj.optString("stats", "統計更新");
 
                     String js = String.format("window.__updateAI && window.__updateAI('%s', %d, '%s', '%s');",
@@ -316,7 +308,7 @@ public class MainActivity extends AppCompatActivity {
             "hud.style.cssText = 'position:fixed;top:50px;right:8px;width:215px;background:rgba(11,17,32,0.96);border:1px solid rgba(56,189,248,0.7);border-radius:10px;z-index:999999;color:#f1f5f9;font-size:11px;box-shadow:0 8px 24px rgba(0,0,0,0.85);font-family:sans-serif;user-select:none;backdrop-filter:blur(6px);';" +
             "hud.innerHTML = " +
                 "'<div id=\"hud_header\" style=\"padding:7px 10px;background:#1e293b;border-radius:10px 10px 0 0;font-weight:bold;color:#38bdf8;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #334155;cursor:move;touch-action:none;\">" +
-                    "<span>👁 GPT-6 Sol 視覺精算</span>" +
+                    "<span>👁 GPT-6 視覺決策</span>" +
                     "<div style=\"display:flex;gap:3px;align-items:center;\">" +
                         "<button id=\"tab_bac\" style=\"background:#2563eb;border:1px solid #3b82f6;color:#fff;padding:2px 6px;border-radius:3px;font-size:10px;\">百家</button>" +
                         "<button id=\"tab_slt\" style=\"background:#0f172a;border:1px solid #475569;color:#94a3b8;padding:2px 6px;border-radius:3px;font-size:10px;\">老虎</button>" +
@@ -331,9 +323,9 @@ public class MainActivity extends AppCompatActivity {
                             "<button id=\"nav_dg\" style=\"background:#0f172a;border:1px solid #475569;color:#e2e8f0;padding:4px 0;border-radius:3px;font-size:10px;\">DG 百家</button>" +
                         "</div>' +" +
                         "'<div style=\"background:rgba(15,23,42,0.85);border:1px solid #3b82f6;border-radius:6px;padding:8px 4px;text-align:center;margin-bottom:6px;\">" +
-                            "<div style=\"font-size:10px;color:#94a3b8;\">🎯 旗艦路單精算推薦</div>" +
+                            "<div style=\"font-size:10px;color:#94a3b8;\">🎯 實時精算決策</div>" +
                             "<div id=\"ai_pick_target\" style=\"font-size:18px;font-weight:900;color:#ef4444;margin:2px 0;\">待命中</div>" +
-                            "<div id=\"ai_pick_desc\" style=\"font-size:10px;color:#38bdf8;\">點擊下方按鈕進行視覺掃描</div>" +
+                            "<div id=\"ai_pick_desc\" style=\"font-size:10px;color:#38bdf8;\">點擊下方按鈕進行視覺精算</div>" +
                         "</div>' +" +
                         "'<button id=\"btn_do_ai\" style=\"width:100%;background:#2563eb;color:#fff;border:none;padding:7px 0;border-radius:4px;font-weight:bold;margin-bottom:6px;font-size:11px;\">📸 截圖畫面並由 AI 辨識</button>' +" +
                         "'<div style=\"display:flex;justify-content:space-between;font-size:10px;color:#94a3b8;\">" +
@@ -505,9 +497,7 @@ public class MainActivity extends AppCompatActivity {
             "  var s = document.getElementById('hud_score');" +
             "  if (t) {" +
             "    t.innerText = '【' + pick + '】 ' + conf + '%';" +
-            "    if (pick === '莊') t.style.color = '#ef4444';" +
-            "    else if (pick === '閒') t.style.color = '#3b82f6';" +
-            "    else t.style.color = '#facc15';" +
+            "    t.style.color = (pick === '莊') ? '#ef4444' : '#3b82f6';" +
             "  }" +
             "  if (d) d.innerText = reason;" +
             "  if (s) s.innerText = stats;" +
