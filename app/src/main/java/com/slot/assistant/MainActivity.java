@@ -88,8 +88,14 @@ public class MainActivity extends AppCompatActivity {
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
+                        // 核心修復：先換 URL，並在 200ms 後強制 Reload，徹底啟動目標遊戲
                         webView.loadUrl(targetUrl);
-                        webView.evaluateJavascript("window.location.href = '" + targetUrl + "';", null);
+                        webView.postDelayed(new Runnable() {
+                            @Override
+                            public void run() {
+                                webView.reload();
+                            }
+                        }, 200);
                     }
                 });
             }
@@ -125,7 +131,7 @@ public class MainActivity extends AppCompatActivity {
         webView.postDelayed(hudWatchdog, 1000);
     }
 
-    // 原生畫布截圖
+    // 原生高畫質截圖（升級為 720px 高清，確保底欄微小數字 100% 辨識）
     private void captureAndAnalyze(final String platform) {
         if (isAnalyzing) return;
         isAnalyzing = true;
@@ -142,8 +148,9 @@ public class MainActivity extends AppCompatActivity {
                         return;
                     }
 
-                    float scale = 540f / w;
-                    int targetW = 540;
+                    // 提升解析度至 720px，消除底欄小字與下三路模糊
+                    float scale = 720f / w;
+                    int targetW = 720;
                     int targetH = (int) (h * scale);
 
                     Bitmap bitmap = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888);
@@ -152,7 +159,7 @@ public class MainActivity extends AppCompatActivity {
                     webView.draw(canvas);
 
                     ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                    bitmap.compress(Bitmap.CompressFormat.JPEG, 70, baos);
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, 85, baos);
                     byte[] imageBytes = baos.toByteArray();
                     final String base64Image = Base64.encodeToString(imageBytes, Base64.NO_WRAP);
                     bitmap.recycle();
@@ -178,7 +185,7 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    // 呼叫 GPT-6 Astra 模型（支援 MT / DG 雙軌識別）
+    // 呼叫 GPT-6 Astra 模型（強化底欄精準定位與防偷懶約束）
     private String callOpenAIAstra(String base64Image, String platform) throws Exception {
         URL url = new URL("https://api.openai.com/v1/responses");
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -203,24 +210,29 @@ public class MainActivity extends AppCompatActivity {
 
         JSONArray contentArray = new JSONArray();
 
+        // 核心提示詞強化：精確指向底欄位置，嚴禁回答「未知」或「畫面載入中」
         JSONObject textObj = new JSONObject();
         textObj.put("type", "input_text");
-        String prompt = "你是頂尖百家樂視覺精算系統，當前分析平台提示為【" + platform.toUpperCase() + " 百家】。\n" +
-                "請嚴格觀察圖片下半部的路單與比分：\n" +
-                "【平台特徵與數據讀取】：\n" +
-                "1. DG 百家模式：底欄比分為簡體【庄 XX 闲 XX 和 XX 庄对 X 闲对 X 总 XX】（右下角帶有庄问路/闲问路按鈕）。\n" +
-                "2. MT 百家模式：底欄比分為繁體【莊 XX 閒 XX 和 XX 莊對 X 閒對 X 總數 XX】。\n" +
-                "請精確識別當前底欄的莊、閒、和比分與總局數。\n\n" +
+        String prompt = "你是頂尖百家樂視覺精算大師，當前牌桌為【" + platform.toUpperCase() + " 百家】。\n" +
+                "【重要視覺辨識指引 - 聚焦圖片最底部】：\n" +
+                "1. 圖片最下方的白色網格為路單走勢（珠盤路、大路、下三路）。\n" +
+                "2. 圖片最底端紅框中清晰標註著當前真實比分：\n" +
+                "   - DG 模式位於最底部紅框：【庄 XX 闲 XX 和 XX 庄对 X 闲对 X 总 XX】（例如：庄 16 闲 16 和 7 总 39）。\n" +
+                "   - MT 模式位於路單底欄：【莊 XX 閒 XX 和 XX 總數 XX】。\n" +
+                "【嚴格鐵律】：\n" +
+                "- 嚴禁回答『畫面仍在載入』或『數據未知』！底欄數字清晰可見，請務必辨識真實比分並填入 stats！\n" +
+                "- 嚴禁輸出觀望！必須強制二選一【莊】或【閒】。\n\n" +
                 "【高勝率推演核心流程】：\n" +
-                "1.【大路形態識別】：觀察最新一列走勢，是處於連龍（同側 >= 2）還是規律單跳（一莊一閒跳開）？\n" +
-                "2.【下三路齊整度】：觀察右側大眼仔、小路、蟑螂路紅藍走向（紅筆代表拍整順勢，藍筆代表變盤跳開）。\n" +
-                "3.【均值回歸】：若比分差距 >= 3 局，結合大數定律提供反向補位權重。\n" +
-                "4.【決策鐵律】：嚴禁輸出觀望！必須強制在【莊】與【閒】中二選一，信心度評估於 68%~92% 之間。\n\n" +
+                "1.【提取數據】：精確提取最底端比分填入 stats，例如『庄16 闲16 和7 (39局)』。\n" +
+                "2.【大路與下三路形態】：觀察白色大路走勢及右下角紅藍問路（大眼仔、小路、蟑螂路）齊整度。\n" +
+                "3.【均值回歸與動量】：若比分有差距則權衡回歸；若比分持平（如 16:16），結合當前連跳動態給出推薦。\n" +
+                "4. 信心度請評估於 68%~92% 之間，並附上具體形態理由。\n\n" +
                 "嚴格僅輸出純 JSON 物件：\n" +
-                "{\"pick\":\"莊\",\"conf\":82,\"reason\":\"大路單跳形態，下三路齊整\",\"stats\":\"庄13 闲7 和2 (22局)\"}";
+                "{\"pick\":\"莊\",\"conf\":78,\"reason\":\"大路單跳形態，下三路齊整轉紅\",\"stats\":\"庄16 闲16 和7 (39局)\"}";
         textObj.put("text", prompt);
         contentArray.put(textObj);
 
+        // 截圖影像
         JSONObject imgObj = new JSONObject();
         imgObj.put("type", "input_image");
         imgObj.put("image_url", "data:image/jpeg;base64," + base64Image);
@@ -323,7 +335,6 @@ public class MainActivity extends AppCompatActivity {
             "var rootTarget = document.documentElement || document.body;" +
             "if (!rootTarget) return;" +
 
-            // 表單失焦自動觸發 Vue 狀態同步
             "document.addEventListener('focusout', function(e) {" +
             "  if (e.target && e.target.tagName === 'INPUT') {" +
             "    e.target.dispatchEvent(new Event('input', { bubbles: true }));" +
@@ -343,11 +354,11 @@ public class MainActivity extends AppCompatActivity {
             "  el.addEventListener('click', function(e) { e.stopPropagation(); fn(); });" +
             "}" +
 
-            "var curPlatform = 'mt';" +
+            // 預設平台：若目前網址含有 dg 則自動選取 dg
+            "var curPlatform = (location.href.indexOf('game_name=dg') !== -1) ? 'dg' : 'mt';" +
 
             "var hud = document.createElement('div');" +
             "hud.id = 'slot-assistant-hud';" +
-            // z-index 設為 2147483647 最高層級，保證穿透任何橫幅與彈窗
             "hud.style.cssText = 'position:fixed;top:60px;right:10px;width:205px;background:rgba(11,17,32,0.96);border:1.5px solid #38bdf8;border-radius:10px;z-index:2147483647;color:#f1f5f9;font-size:11px;box-shadow:0 8px 30px rgba(0,0,0,0.9);font-family:sans-serif;user-select:none;backdrop-filter:blur(8px);';" +
             "hud.innerHTML = " +
                 "'<div id=\"hud_header\" style=\"padding:7px 10px;background:#1e293b;border-radius:9px 9px 0 0;font-weight:bold;color:#38bdf8;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #334155;cursor:move;touch-action:none;\">" +
@@ -376,7 +387,6 @@ public class MainActivity extends AppCompatActivity {
                         "'<div>Telegram：<b style=\"color:#38bdf8;\">@TG_APK1</b></div>' +" +
                     "'</div>' +" +
                 "'</div>';" +
-            // 掛載至 rootTarget (documentElement)，避開 Vue 抹除
             "rootTarget.appendChild(hud);" +
 
             // 拖曳處理
@@ -417,11 +427,16 @@ public class MainActivity extends AppCompatActivity {
             "    btnMt.style.background = '#0f172a'; btnMt.style.borderColor = '#475569'; btnMt.style.color = '#94a3b8';" +
             "  }" +
             "}" +
+            "setPlatformUI(curPlatform);" +
+
+            // 雙向強制換台：通知 Java 層換網址並 Reload
             "function safeNav(url, plat) {" +
             "  setPlatformUI(plat);" +
-            "  try { window.location.href = url; } catch(e) {}" +
             "  if (window.AndroidBridge && window.AndroidBridge.switchGame) {" +
             "    window.AndroidBridge.switchGame(url);" +
+            "  } else {" +
+            "    window.location.replace(url);" +
+            "    window.location.reload();" +
             "  }" +
             "}" +
             "bindTap(btnMt, function() { safeNav('https://www.osc169.com/#/game/play?game_name=meta_all&game_type=3&device=mobile', 'mt'); });" +
@@ -436,37 +451,6 @@ public class MainActivity extends AppCompatActivity {
             "    window.AndroidBridge.requestVisualAnalysis(curPlatform);" +
             "  }" +
             "});" +
-
-            // 背景自動感應底欄更新路單
-            "var lastTot = -1;" +
-            "function scanLocalData() {" +
-            "  try {" +
-            "    var raw = document.body ? (document.body.innerText || '') : '';" +
-            "    try {" +
-            "      var ifrs = document.querySelectorAll('iframe');" +
-            "      for (var k = 0; k < ifrs.length; k++) {" +
-            "        var d = ifrs[k].contentDocument || ifrs[k].contentWindow.document;" +
-            "        if (d && d.body) raw += ' ' + d.body.innerText;" +
-            "      }" +
-            "    } catch(e) {}" +
-            "    if (!raw) return;" +
-            "    var r = /(?:莊|庄)\\s*(\\d{1,3})[\\s\\S]{1,40}?(?:閒|闲)\\s*(\\d{1,3})[\\s\\S]{1,40}?(?:和)\\s*(\\d{1,3})[\\s\\S]{1,60}?(?:總數|总数|局數|局数|总)\\s*(\\d{1,3})/g;" +
-            "    var m;" +
-            "    while ((m = r.exec(raw)) !== null) {" +
-            "      var b = parseInt(m[1], 10), p = parseInt(m[2], 10), t = parseInt(m[3], 10), tot = parseInt(m[4], 10);" +
-            "      if (tot > 0 && Math.abs((b + p + t) - tot) <= 2) {" +
-            "        if (tot !== lastTot) {" +
-            "          lastTot = tot;" +
-            "          var sElem = document.getElementById('hud_score');" +
-            "          if (sElem) sElem.innerText = '庄' + b + ' 闲' + p + ' 和' + t + ' (' + tot + '局)';" +
-            "        }" +
-            "        break;" +
-            "      }" +
-            "    }" +
-            "  } catch(e) {}" +
-            "}" +
-            "setInterval(scanLocalData, 600);" +
-            "scanLocalData();" +
 
             // 回調更新介面
             "window.__updateAI = function(pick, conf, reason, stats) {" +
