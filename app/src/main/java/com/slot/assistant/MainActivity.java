@@ -52,7 +52,7 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                injectAutoReaderAssistant(view);
+                injectFormFixerAndAssistant(view);
             }
         });
 
@@ -60,39 +60,26 @@ public class MainActivity extends AppCompatActivity {
         webView.loadUrl("https://www.osc169.com/#/game/play?game_name=meta_all&game_type=3&device=mobile");
     }
 
-    private void injectAutoReaderAssistant(WebView view) {
+    private void injectFormFixerAndAssistant(WebView view) {
         String js = "javascript:(function() {" +
-            "if (document.getElementById('slot-assistant-hud')) return;" +
-
-            // 1. 安全攔截 WebSocket，完整保留靜態屬性與原型鏈
-            "try {" +
-            "  if (!window._origWS) {" +
-            "    window._origWS = window.WebSocket;" +
-            "    var SafeWS = function(url, protocols) {" +
-            "      var ws = protocols ? new window._origWS(url, protocols) : new window._origWS(url);" +
-            "      ws.addEventListener('message', function(event) {" +
-            "        try {" +
-            "          var str = event.data;" +
-            "          if (typeof str === 'string' && (str.includes('banker') || str.includes('player') || str.includes('result'))) {" +
-            "            var data = JSON.parse(str);" +
-            "            if (data.result === 'B' || data.winner === 'banker') { shoeRoad.push('B'); bCount++; computeAIDecision(); }" +
-            "            else if (data.result === 'P' || data.winner === 'player') { shoeRoad.push('P'); pCount++; computeAIDecision(); }" +
-            "            else if (data.result === 'T' || data.winner === 'tie') { shoeRoad.push('T'); tCount++; computeAIDecision(); }" +
-            "          }" +
-            "        } catch(e) {}" +
+            // ==================== 1. 表單自動同步修正器 ====================
+            "if (!window._formFixerInjected) {" +
+            "  window._formFixerInjected = true;" +
+            "  document.addEventListener('click', function(e) {" +
+            "    var target = e.target;" +
+            "    if (target && (target.innerText && target.innerText.indexOf('登入') !== -1 || target.className && target.className.indexOf('login') !== -1)) {" +
+            "      var inputs = document.querySelectorAll('input');" +
+            "      inputs.forEach(function(inp) {" +
+            "        inp.dispatchEvent(new Event('input', { bubbles: true }));" +
+            "        inp.dispatchEvent(new Event('change', { bubbles: true }));" +
+            "        inp.dispatchEvent(new Event('blur', { bubbles: true }));" +
             "      });" +
-            "      return ws;" +
-            "    };" +
-            "    SafeWS.prototype = window._origWS.prototype;" +
-            "    SafeWS.CONNECTING = window._origWS.CONNECTING;" +
-            "    SafeWS.OPEN = window._origWS.OPEN;" +
-            "    SafeWS.CLOSING = window._origWS.CLOSING;" +
-            "    SafeWS.CLOSED = window._origWS.CLOSED;" +
-            "    window.WebSocket = SafeWS;" +
-            "  }" +
-            "} catch(e) {}" +
+            "    }" +
+            "  }, true);" +
+            "}" +
 
-            // 2. 建立引路人 HUD 介面
+            // ==================== 2. 引路人 HUD 介面 ====================
+            "if (document.getElementById('slot-assistant-hud')) return;" +
             "var hud = document.createElement('div');" +
             "hud.id = 'slot-assistant-hud';" +
             "hud.style.cssText = 'position:fixed;top:45px;right:8px;width:250px;background:#0b1120;border:1px solid #38bdf8;border-radius:10px;z-index:999999;color:#e2e8f0;font-size:12px;box-shadow:0 8px 24px rgba(0,0,0,0.85);font-family:sans-serif;user-select:none;';" +
@@ -220,7 +207,7 @@ public class MainActivity extends AppCompatActivity {
             "  document.getElementById('last_seen_road').innerText = '最新：' + (shoeRoad.slice(-6).join(' ') || '連線中');" +
             "}" +
 
-            // DOM 畫面文字輪詢：偵測到登入輸入框時自動暫停，避免干擾表單
+            // DOM 畫面掃描：當畫面存在密碼輸入框時自動停止掃描，避免 DOM 競爭
             "function scanScreenDOM() {" +
             "  try {" +
             "    if (document.querySelector('input[type=\"password\"]')) return;" +
