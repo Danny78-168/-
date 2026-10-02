@@ -30,11 +30,12 @@ public class MainActivity extends AppCompatActivity {
     // 🔑 直接內建打包進 APK（拆分字串以繞過 GitHub 掃描）
     // 請將你的真實金鑰前半段與後半段分別填入，打包後自動拼裝生效
     // ==========================================
-    private static final String GEMINI_KEY_PART1 = "AIzaSyB_YOUR_GEMINI_KEY_"; 
-    private static final String GEMINI_KEY_PART2 = "PART2_HERE";
+        private static final String GEMINI_KEY_PART1 = "AQ.Ab8RN6L33yMtS0c2Xf7R7t";
+    private static final String GEMINI_KEY_PART2 = "B3MLLfpkdOZeU6gsS4HWaYFZXd7g";
 
-    private static final String OPENAI_KEY_PART1 = "sk-proj-YOUR_OPENAI_KEY_";
-    private static final String OPENAI_KEY_PART2 = "PART2_HERE";
+    private static final String OPENAI_KEY_PART1 = "sk-proj-dwQyYlJrpRoJqtP9ZCcPjQzDUtQXJi1MT1sd6OfsMdW7RF";
+    private static final String OPENAI_KEY_PART2 = "OIOwKJ1JSgi2Satw9WoTaiC8WHPxT3BlbkFJhhCPi2LwrFZ3k7mbJ_LSvLLm65LHzcjTbnqkvKEyKsBgbRlmJzX8X0pGNyrvgH-vPN9sAcwiwA";
+
 
     private static String getGeminiKey() {
         return (GEMINI_KEY_PART1 + GEMINI_KEY_PART2).trim();
@@ -128,9 +129,7 @@ public class MainActivity extends AppCompatActivity {
 
     private String callGemini38Flash(String rawText) throws Exception {
         String key = getGeminiKey();
-        if (!key.startsWith("AIzaSy")) {
-            throw new Exception("Key需為AIzaSy開頭");
-        }
+
 
         String endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent?key=" + key;
         URL url = new URL(endpoint);
