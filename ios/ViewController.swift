@@ -1,9 +1,18 @@
 import UIKit
 import WebKit
 
-class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHandler {
+class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHandler, UITextFieldDelegate {
     private var webView: WKWebView!
     private var isAnalyzing = false
+
+    // 頂部通用導航網址列
+    private let topBar = UIView()
+    private let urlTextField = UITextField()
+    private let goButton = UIButton(type: .system)
+    private let backButton = UIButton(type: .system)
+    private let toggleBarButton = UIButton(type: .system)
+    private var topBarHeightConstraint: NSLayoutConstraint?
+    private var isBarHidden = false
 
     // 🔑 拆分字串內建 OpenAI 金鑰
     private let OPENAI_KEY_PART1 = "sk-proj-dwQyYlJrpRoJqtP9ZCcPjQzDUtQXJi1MT1sd6OfsMdW7RF"
@@ -15,57 +24,161 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
 
     override func viewDidLoad() {
         super.viewDidLoad()
+        view.backgroundColor = UIColor(red: 11/255, green: 17/255, blue: 32/255, alpha: 1)
         setupWebView()
+        setupTopBar()
     }
 
     private func setupWebView() {
         let contentController = WKUserContentController()
-        
-        // 註冊原生通道
         contentController.add(self, name: "requestVisualAnalysis")
-        contentController.add(self, name: "switchGame")
 
-        // 注入 AndroidBridge 相容腳本，保持 HUD 程式碼完全相容
         let bridgePolyfill = """
         window.AndroidBridge = {
-            requestVisualAnalysis: function() {
-                window.webkit.messageHandlers.requestVisualAnalysis.postMessage("");
-            },
-            switchGame: function(url) {
-                window.webkit.messageHandlers.switchGame.postMessage(url);
+            requestVisualAnalysis: function(plat) {
+                window.webkit.messageHandlers.requestVisualAnalysis.postMessage(plat || 'auto');
             }
         };
         """
-        let userScript = WKUserScript(source: bridgePolyfill, injectionTime: .atDocumentStart, forMainFrameOnly: false)
-        contentController.addUserScript(userScript)
+        contentController.addUserScript(WKUserScript(source: bridgePolyfill, injectionTime: .atDocumentStart, forMainFrameOnly: false))
 
         let config = WKWebViewConfiguration()
         config.userContentController = contentController
         config.allowsInlineMediaPlayback = true
         config.mediaTypesRequiringUserActionForPlayback = []
 
-        webView = WKWebView(frame: view.bounds, configuration: config)
-        webView.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        webView = WKWebView(frame: .zero, configuration: config)
+        webView.translatesAutoresizingMaskIntoConstraints = false
         webView.navigationDelegate = self
         webView.customUserAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1"
         view.addSubview(webView)
+    }
 
-        if let url = URL(string: "https://www.osc169.com/#/game/play?game_name=meta_all&game_type=3&device=mobile") {
+    private func setupTopBar() {
+        topBar.translatesAutoresizingMaskIntoConstraints = false
+        topBar.backgroundColor = UIColor(red: 15/255, green: 23/255, blue: 42/255, alpha: 0.95)
+        view.addSubview(topBar)
+
+        // 上一頁按鈕
+        backButton.setTitle("◀", for: .normal)
+        backButton.setTitleColor(.white, for: .normal)
+        backButton.titleLabel?.font = .systemFont(ofSize: 14, weight: .bold)
+        backButton.translatesAutoresizingMaskIntoConstraints = false
+        backButton.addTarget(self, action: #selector(handleBack), for: .touchUpInside)
+        topBar.addSubview(backButton)
+
+        // 網址輸入框（支援貼上任何連結）
+        urlTextField.translatesAutoresizingMaskIntoConstraints = false
+        urlTextField.backgroundColor = UIColor(red: 30/255, green: 41/255, blue: 59/255, alpha: 1)
+        urlTextField.textColor = UIColor(red: 56/255, green: 189/255, blue: 248/255, alpha: 1)
+        urlTextField.font = .systemFont(ofSize: 12)
+        urlTextField.placeholder = "請輸入或貼上任何遊戲網址..."
+        urlTextField.keyboardType = .URL
+        urlTextField.autocapitalizationType = .none
+        urlTextField.autocorrectionType = .no
+        urlTextField.layer.cornerRadius = 6
+        urlTextField.layer.borderWidth = 1
+        urlTextField.layer.borderColor = UIColor(red: 71/255, green: 85/255, blue: 105/255, alpha: 1).cgColor
+        urlTextField.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 8, height: 28))
+        urlTextField.leftViewMode = .always
+        urlTextField.returnKeyType = .go
+        urlTextField.delegate = self
+        topBar.addSubview(urlTextField)
+
+        // 前往按鈕
+        goButton.setTitle("前往", for: .normal)
+        goButton.backgroundColor = UIColor(red: 37/255, green: 99/255, blue: 235/255, alpha: 1)
+        goButton.setTitleColor(.white, for: .normal)
+        goButton.titleLabel?.font = .systemFont(ofSize: 12, weight: .bold)
+        goButton.layer.cornerRadius = 6
+        goButton.translatesAutoresizingMaskIntoConstraints = false
+        goButton.addTarget(self, action: #selector(handleGo), for: .touchUpInside)
+        topBar.addSubview(goButton)
+
+        // 懸浮迷你開關（隱藏/展開網址列）
+        toggleBarButton.setTitle("網址列", for: .normal)
+        toggleBarButton.setTitleColor(.white, for: .normal)
+        toggleBarButton.titleLabel?.font = .systemFont(ofSize: 10, weight: .bold)
+        toggleBarButton.backgroundColor = UIColor(red: 30/255, green: 41/255, blue: 59/255, alpha: 0.9)
+        toggleBarButton.layer.cornerRadius = 4
+        toggleBarButton.layer.borderWidth = 1
+        toggleBarButton.layer.borderColor = UIColor(red: 56/255, green: 189/255, blue: 248/255, alpha: 0.5).cgColor
+        toggleBarButton.translatesAutoresizingMaskIntoConstraints = false
+        toggleBarButton.addTarget(self, action: #selector(handleToggleBar), for: .touchUpInside)
+        view.addSubview(toggleBarButton)
+
+        topBarHeightConstraint = topBar.heightAnchor.constraint(equalToConstant: 44)
+
+        NSLayoutConstraint.activate([
+            topBar.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            topBar.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            topBar.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            topBarHeightConstraint!,
+
+            backButton.leadingAnchor.constraint(equalTo: topBar.leadingAnchor, constant: 8),
+            backButton.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
+            backButton.widthAnchor.constraint(equalToConstant: 30),
+
+            urlTextField.leadingAnchor.constraint(equalTo: backButton.trailingAnchor, constant: 6),
+            urlTextField.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
+            urlTextField.heightAnchor.constraint(equalToConstant: 32),
+
+            goButton.leadingAnchor.constraint(equalTo: urlTextField.trailingAnchor, constant: 6),
+            goButton.trailingAnchor.constraint(equalTo: topBar.trailingAnchor, constant: -8),
+            goButton.centerYAnchor.constraint(equalTo: topBar.centerYAnchor),
+            goButton.widthAnchor.constraint(equalToConstant: 48),
+            goButton.heightAnchor.constraint(equalToConstant: 32),
+
+            webView.topAnchor.constraint(equalTo: topBar.bottomAnchor),
+            webView.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            webView.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            webView.bottomAnchor.constraint(equalTo: view.bottomAnchor),
+
+            toggleBarButton.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 4),
+            toggleBarButton.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 8),
+            toggleBarButton.widthAnchor.constraint(equalToConstant: 50),
+            toggleBarButton.heightAnchor.constraint(equalToConstant: 24)
+        ])
+        toggleBarButton.isHidden = true
+    }
+
+    @objc private func handleBack() {
+        if webView.canGoBack { webView.goBack() }
+    }
+
+    @objc private func handleGo() {
+        urlTextField.resignFirstResponder()
+        guard var text = urlTextField.text?.trimmingCharacters(in: .whitespacesAndNewlines), !text.isEmpty else { return }
+        if !text.lowercased().hasPrefix("http://") && !text.lowercased().hasPrefix("https://") {
+            text = "https://" + text
+        }
+        if let url = URL(string: text) {
             webView.load(URLRequest(url: url))
         }
     }
 
-    // 處理 JS 傳來的訊息
+    @objc private func handleToggleBar() {
+        isBarHidden.toggle()
+        topBarHeightConstraint?.constant = isBarHidden ? 0 : 44
+        topBar.isHidden = isBarHidden
+        toggleBarButton.isHidden = !isBarHidden
+        UIView.animate(withDuration: 0.25) { self.view.layoutIfNeeded() }
+    }
+
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        handleGo()
+        return true
+    }
+
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         if message.name == "requestVisualAnalysis" {
-            captureAndAnalyze()
-        } else if message.name == "switchGame", let targetUrl = message.body as? String, let url = URL(string: targetUrl) {
-            webView.load(URLRequest(url: url))
+            let plat = (message.body as? String) ?? "auto"
+            captureAndAnalyze(platform: plat)
         }
     }
 
-    // iOS WebKit 原生畫布截圖
-    private func captureAndAnalyze() {
+    // 720px 高畫質原生畫布截圖
+    private func captureAndAnalyze(platform: String) {
         guard !isAnalyzing else { return }
         isAnalyzing = true
 
@@ -79,8 +192,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
                 return
             }
 
-            // 等比縮小寬度至 540px
-            let targetWidth: CGFloat = 540.0
+            let targetWidth: CGFloat = 720.0
             let scale = targetWidth / snapshot.size.width
             let targetSize = CGSize(width: targetWidth, height: snapshot.size.height * scale)
 
@@ -89,19 +201,18 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
             let resizedImage = UIGraphicsGetImageFromCurrentImageContext()
             UIGraphicsEndImageContext()
 
-            guard let jpegData = resizedImage?.jpegData(compressionQuality: 0.7) else {
+            guard let jpegData = resizedImage?.jpegData(compressionQuality: 0.85) else {
                 self.isAnalyzing = false
-                self.updateHUDWithError("壓縮影像失敗")
+                self.updateHUDWithError("影像壓縮失敗")
                 return
             }
 
-            let base64String = jpegData.base64EncodedString()
-            self.callOpenAIAstra(base64Image: base64String)
+            self.callOpenAIAstra(base64Image: jpegData.base64EncodedString(), platform: platform)
         }
     }
 
-    // 呼叫 GPT-6 Astra 模型
-    private func callOpenAIAstra(base64Image: String) {
+    // 通用 GPT-6 Astra 視覺精算
+    private func callOpenAIAstra(base64Image: String, platform: String) {
         guard let url = URL(string: "https://api.openai.com/v1/responses") else { return }
 
         var request = URLRequest(url: url)
@@ -111,15 +222,20 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
         request.timeoutInterval = 25
 
         let prompt = """
-        你是具備大數據統計背景的職業百家樂路單視覺精算大師。
-        請嚴格觀察圖片下半部【珠盤路、大路、下三路（大眼仔、小路、蟑螂路）】：
-        【嚴禁行為】：嚴禁僅以『比分接近/莊天然勝率』作為預測理由！嚴禁輸出觀望！必須強制二選一【莊】或【閒】！
-        1.【大路形態識別】：觀察最新列走勢，是處於連龍還是單跳？
-        2.【下三路拍整度驗證】：觀察右下角三行標記，紅多為整齊順延，藍多為變盤轉向。
-        3.【均值修正】：若莊閒比分差距 >= 3 局，將大數回歸作為權重輔助。
-        4.【精算輸出】：信心度評估於 68%~92% 之間，理由需具體點出形態。
+        你是頂尖百家樂視覺精算大師。當前牌桌模式設定為【\(platform.uppercased())】。
+        【通用視覺辨識核心指引】：
+        1. 本應用適用於任何娛樂城與任何百家樂遊戲介面。請觀察畫面中的路單走勢（大路、珠盤路、下三路）與即時比分。
+        2. 仔細辨識畫面底部或側邊的真實比分（莊/庄、閒/闲、和、總數/总數）：
+           - 無論是 MT、DG、WM、SA、歐博、Evolution 還是其他系統，請精確讀出當前數據。
+        【嚴格鐵律】：
+        - 嚴禁回答『畫面仍在載入』或『數據未知』！底欄數字清晰可見，務必識別真實比分填入 stats！
+        - 嚴禁輸出觀望！必須強制在【莊】與【閒】中二選一。
+        【推演流程】：
+        1. 提取真實比分填入 stats，例如『庄16 闲16 和7 (39局)』。
+        2. 依據大路走向（長龍或單跳）與下三路齊整度給出推薦。
+        3. 信心度評估於 68%~92% 之間，並給出具體形態理由。
         嚴格僅輸出純 JSON 物件：
-        {"pick":"莊","conf":82,"reason":"大路單跳形態，下三路齊整","stats":"莊11 閒12 和4 (27局)"}
+        {"pick":"莊","conf":80,"reason":"大路單跳形態，下三路齊整轉紅","stats":"庄16 闲16 和7 (39局)"}
         """
 
         let body: [String: Any] = [
@@ -180,7 +296,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
             let stats = obj["stats"] as? String ?? "統計更新"
 
             let js = "window.__updateAI && window.__updateAI('\(pick)', \(conf), '\(reason)', '\(stats)');"
-            self?.webView.evaluateJavaScript(js, completionHandler: nil)
+            self?.webView.evaluateJavascript(js, completionHandler: nil)
         }
     }
 
@@ -192,6 +308,9 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+        if let currentUrl = webView.url?.absoluteString {
+            urlTextField.text = currentUrl
+        }
         injectAssistantScript()
     }
 
@@ -199,6 +318,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
         let js = """
         (function() {
             if (document.getElementById('slot-assistant-hud')) return;
+            var rootTarget = document.documentElement || document.body;
+            if (!rootTarget) return;
 
             function bindTap(el, fn) {
                 if (!el) return;
@@ -212,54 +333,38 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
                 el.addEventListener('click', function(e) { e.stopPropagation(); fn(); });
             }
 
+            var curMode = '通用';
+
             var hud = document.createElement('div');
             hud.id = 'slot-assistant-hud';
-            hud.style.cssText = 'position:fixed;top:60px;right:8px;width:215px;background:rgba(11,17,32,0.96);border:1px solid rgba(56,189,248,0.7);border-radius:10px;z-index:999999;color:#f1f5f9;font-size:11px;box-shadow:0 8px 24px rgba(0,0,0,0.85);font-family:sans-serif;user-select:none;-webkit-user-select:none;backdrop-filter:blur(6px);';
+            hud.style.cssText = 'position:fixed;top:70px;right:10px;width:205px;background:rgba(11,17,32,0.96);border:1.5px solid #38bdf8;border-radius:10px;z-index:2147483647;color:#f1f5f9;font-size:11px;box-shadow:0 8px 30px rgba(0,0,0,0.9);font-family:sans-serif;user-select:none;-webkit-user-select:none;backdrop-filter:blur(8px);';
             hud.innerHTML =
-                '<div id="hud_header" style="padding:7px 10px;background:#1e293b;border-radius:10px 10px 0 0;font-weight:bold;color:#38bdf8;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #334155;cursor:move;touch-action:none;">' +
-                    '<span>👁 Astra 深度推論 (iOS)</span>' +
-                    '<div style="display:flex;gap:3px;align-items:center;">' +
-                        '<button id="tab_bac" style="background:#2563eb;border:1px solid #3b82f6;color:#fff;padding:2px 6px;border-radius:3px;font-size:10px;">百家</button>' +
-                        '<button id="tab_slt" style="background:#0f172a;border:1px solid #475569;color:#94a3b8;padding:2px 6px;border-radius:3px;font-size:10px;">老虎</button>' +
-                        '<span id="hud_tog" style="cursor:pointer;color:#94a3b8;font-size:10px;margin-left:3px;">[收]</span>' +
-                    '</div>' +
+                '<div id="hud_header" style="padding:7px 10px;background:#1e293b;border-radius:9px 9px 0 0;font-weight:bold;color:#38bdf8;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #334155;cursor:move;touch-action:none;">' +
+                    '<span>👁 Astra 深度推論</span>' +
+                    '<span id="hud_tog" style="cursor:pointer;color:#94a3b8;font-size:10px;margin-left:3px;">[收]</span>' +
                 '</div>' +
                 '<div id="hud_content" style="padding:10px;">' +
-                    '<div id="p_bac">' +
-                        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:6px;">' +
-                            '<button id="nav_mt" style="background:#0f172a;border:1px solid #38bdf8;color:#38bdf8;padding:4px 0;border-radius:3px;font-size:10px;font-weight:bold;">MT 百家</button>' +
-                            '<button id="nav_dg" style="background:#0f172a;border:1px solid #475569;color:#e2e8f0;padding:4px 0;border-radius:3px;font-size:10px;">DG 百家</button>' +
-                        '</div>' +
-                        '<div style="background:rgba(15,23,42,0.85);border:1px solid #3b82f6;border-radius:6px;padding:8px 4px;text-align:center;margin-bottom:6px;">' +
-                            '<div style="font-size:10px;color:#94a3b8;">🎯 深度路單精算建議</div>' +
-                            '<div id="ai_pick_target" style="font-size:18px;font-weight:900;color:#ef4444;margin:2px 0;">待命中</div>' +
-                            '<div id="ai_pick_desc" style="font-size:10px;color:#38bdf8;">點擊下方進行大路與下三路分析</div>' +
-                        '</div>' +
-                        '<button id="btn_do_ai" style="width:100%;background:#2563eb;color:#fff;border:none;padding:7px 0;border-radius:4px;font-weight:bold;margin-bottom:6px;font-size:11px;">📸 截圖畫面並由 AI 辨識</button>' +
-                        '<div style="display:flex;justify-content:space-between;font-size:10px;color:#94a3b8;">' +
-                            '<span id="hud_score">未掃描</span>' +
-                            '<span id="hud_sync_dot" style="color:#4ade80;">● 連線</span>' +
-                        '</div>' +
+                    '<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px;margin-bottom:6px;">' +
+                        '<button id="mode_gen" style="background:#2563eb;border:1px solid #38bdf8;color:#fff;padding:4px 0;border-radius:3px;font-size:9px;font-weight:bold;">通用</button>' +
+                        '<button id="mode_mt" style="background:#0f172a;border:1px solid #475569;color:#94a3b8;padding:4px 0;border-radius:3px;font-size:9px;">MT</button>' +
+                        '<button id="mode_dg" style="background:#0f172a;border:1px solid #475569;color:#94a3b8;padding:4px 0;border-radius:3px;font-size:9px;">DG</button>' +
                     '</div>' +
-                    '<div id="p_slt" style="display:none;">' +
-                        '<div style="display:grid;grid-template-columns:repeat(3, 1fr);gap:3px;margin-bottom:8px;">' +
-                            '<button id="nav_atg" style="background:#0f172a;border:1px solid #475569;color:#fff;padding:4px 0;border-radius:3px;font-size:9px;">虎小妹</button>' +
-                            '<button id="nav_rsg" style="background:#0f172a;border:1px solid #475569;color:#fff;padding:4px 0;border-radius:3px;font-size:9px;">雷神</button>' +
-                            '<button id="nav_ava" style="background:#0f172a;border:1px solid #475569;color:#fff;padding:4px 0;border-radius:3px;font-size:9px;">Avatar</button>' +
-                        '</div>' +
-                        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">' +
-                            '<span>單注:</span>' +
-                            '<input id="s_bet" type="number" value="1.00" step="0.10" style="width:50px;background:#1e293b;border:1px solid #475569;color:#38bdf8;padding:2px;text-align:right;border-radius:3px;">' +
-                        '</div>' +
-                        '<div id="slot_modes" style="display:grid;grid-template-columns:repeat(3, 1fr);gap:2px;margin-bottom:8px;"></div>' +
-                        '<div style="font-size:10px;">' +
-                            '<div style="display:flex;justify-content:space-between;margin-bottom:3px;">免遊成本: <b id="s_cost" style="color:#fff;">$200.00</b></div>' +
-                            '<div style="display:flex;justify-content:space-between;margin-bottom:3px;">理論(96.5%): <b id="s_ev" style="color:#4ade80;">$193.00</b></div>' +
-                            '<div style="display:flex;justify-content:space-between;">中位數: <b id="s_med" style="color:#facc15;">$84.00</b></div>' +
-                        '</div>' +
+                    '<div style="background:rgba(15,23,42,0.85);border:1px solid #3b82f6;border-radius:6px;padding:8px 4px;text-align:center;margin-bottom:6px;">' +
+                        '<div style="font-size:10px;color:#94a3b8;">🎯 深度路單精算建議</div>' +
+                        '<div id=\"ai_pick_target\" style="font-size:18px;font-weight:900;color:#ef4444;margin:2px 0;">待命中</div>' +
+                        '<div id=\"ai_pick_desc\" style="font-size:10px;color:#38bdf8;">點擊下方進行大路與下三路分析</div>' +
+                    '</div>' +
+                    '<button id="btn_do_ai" style="width:100%;background:#2563eb;color:#fff;border:none;padding:8px 0;border-radius:4px;font-weight:bold;margin-bottom:6px;font-size:11px;">📸 截圖畫面並由 AI 辨識</button>' +
+                    '<div style="display:flex;justify-content:space-between;font-size:10px;color:#94a3b8;">' +
+                        '<span id="hud_score">未掃描</span>' +
+                        '<span id="hud_sync_dot" style="color:#4ade80;">● 連線</span>' +
+                    '</div>' +
+                    '<div style="margin-top:8px;padding-top:6px;border-top:1px solid #334155;font-size:9px;color:#94a3b8;line-height:1.45;text-align:center;">' +
+                        '<div>代理聯繫LINE：<b style="color:#38bdf8;">@OSC168</b></div>' +
+                        '<div>Telegram：<b style="color:#38bdf8;">@TG_APK1</b></div>' +
                     '</div>' +
                 '</div>';
-            document.body.appendChild(hud);
+            rootTarget.appendChild(hud);
 
             var header = document.getElementById('hud_header');
             var isDrag = false, sX, sY, iL, iT;
@@ -284,60 +389,21 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
                 else { cnt.style.display = 'none'; tog.innerText = '[展]'; }
             });
 
-            var tB = document.getElementById('tab_bac'), tS = document.getElementById('tab_slt');
-            var pB = document.getElementById('p_bac'), pS = document.getElementById('p_slt');
-            bindTap(tB, function() {
-                pB.style.display = 'block'; pS.style.display = 'none';
-                tB.style.background = '#2563eb'; tB.style.color = '#fff';
-                tS.style.background = '#0f172a'; tS.style.color = '#94a3b8';
-            });
-            bindTap(tS, function() {
-                pS.style.display = 'block'; pB.style.display = 'none';
-                tS.style.background = '#2563eb'; tS.style.color = '#fff';
-                tB.style.background = '#0f172a'; tB.style.color = '#94a3b8';
-            });
-
-            function navTo(u) {
-                if (window.AndroidBridge && window.AndroidBridge.switchGame) window.AndroidBridge.switchGame(u);
-                else location.href = u;
+            var bGen = document.getElementById('mode_gen');
+            var bMt = document.getElementById('mode_mt');
+            var bDg = document.getElementById('mode_dg');
+            function setMode(m) {
+                curMode = m;
+                [bGen, bMt, bDg].forEach(function(btn) {
+                    btn.style.background = '#0f172a'; btn.style.borderColor = '#475569'; btn.style.color = '#94a3b8';
+                });
+                var active = (m === 'mt') ? bMt : (m === 'dg' ? bDg : bGen);
+                active.style.background = '#2563eb'; active.style.borderColor = '#38bdf8'; active.style.color = '#fff';
             }
-            bindTap(document.getElementById('nav_mt'), function() { navTo('https://www.osc169.com/#/game/play?game_name=meta_all&game_type=3&device=mobile'); });
-            bindTap(document.getElementById('nav_dg'), function() { navTo('https://www.osc169.com/#/game/play?game_name=dg&game_type=3&device=mobile'); });
-            bindTap(document.getElementById('nav_atg'), function() { navTo('https://www.osc169.com/#/game/play?game_name=atg&productId=tiger-princess&device=mobile'); });
-            bindTap(document.getElementById('nav_rsg'), function() { navTo('https://www.osc169.com/#/game/play?game_name=rsg&productId=129&device=mobile'); });
-            bindTap(document.getElementById('nav_ava'), function() { navTo('https://www.osc169.com/#/game/play?game_name=avatar&productId=140083&device=mobile'); });
+            bindTap(bGen, function() { setMode('auto'); });
+            bindTap(bMt, function() { setMode('mt'); });
+            bindTap(bDg, function() { setMode('dg'); });
 
             var btnDo = document.getElementById('btn_do_ai');
             bindTap(btnDo, function() {
-                btnDo.innerText = '🧠 Astra 深度推論中...';
-                btnDo.disabled = true;
-                if (window.AndroidBridge && window.AndroidBridge.requestVisualAnalysis) {
-                    window.AndroidBridge.requestVisualAnalysis();
-                }
-            });
-
-            window.__updateAI = function(pick, conf, reason, stats) {
-                var t = document.getElementById('ai_pick_target');
-                var d = document.getElementById('ai_pick_desc');
-                var s = document.getElementById('hud_score');
-                if (t) {
-                    t.innerText = '【' + pick + '】 ' + conf + '%';
-                    t.style.color = (pick === '莊') ? '#ef4444' : '#3b82f6';
-                }
-                if (d) d.innerText = reason;
-                if (s) s.innerText = stats;
-                btnDo.innerText = '📸 截圖畫面並由 AI 辨識';
-                btnDo.disabled = false;
-            };
-
-            window.__updateAIError = function(msg) {
-                var d = document.getElementById('ai_pick_desc');
-                if (d) d.innerText = '辨識重試: ' + msg;
-                btnDo.innerText = '重試';
-                btnDo.disabled = false;
-            };
-        })();
-        """
-        webView.evaluateJavaScript(js, completionHandler: nil)
-    }
-}
+        
