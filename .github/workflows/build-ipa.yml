@@ -17,10 +17,25 @@ jobs:
         run: |
           mkdir -p Payload/SlotAssistant.app
 
+          # 1. 自動過濾手機剪貼簿產生的 NBSP 與隱形零寬字元
+          python3 -c "
+          import glob
+          for f in glob.glob('ios/*.swift'):
+              with open(f, 'rb') as fp:
+                  data = fp.read()
+              data = data.replace(b'\xc2\xa0', b' ')
+              for z in [b'\xe2\x80\x8b', b'\xe2\x80\x8c', b'\xe2\x80\x8d', b'\xef\xbb\xbf']:
+                  data = data.replace(z, b'')
+              with open(f, 'wb') as fp:
+                  fp.write(data)
+          "
+
+          # 2. 加入 -parse-as-library 支援 @main 原生編譯
           SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
           xcrun --sdk iphoneos swiftc \
             -target arm64-apple-ios15.0 \
             -sdk "$SDK_PATH" \
+            -parse-as-library \
             -framework UIKit \
             -framework WebKit \
             -framework Foundation \
@@ -28,6 +43,7 @@ jobs:
             ios/ViewController.swift \
             -o Payload/SlotAssistant.app/SlotAssistant
 
+          # 3. 複製設定檔並封裝 IPA
           cp ios/Info.plist Payload/SlotAssistant.app/Info.plist
           codesign -s - --force Payload/SlotAssistant.app
           zip -r SlotAssistant.ipa Payload
@@ -38,4 +54,3 @@ jobs:
           name: SlotAssistant-iOS-IPA
           path: SlotAssistant.ipa
           if-no-files-found: error
-          
