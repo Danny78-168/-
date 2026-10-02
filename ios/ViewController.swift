@@ -347,8 +347,9 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
                     '<span id="hud_tog" style="cursor:pointer;color:#94a3b8;font-size:10px;margin-left:3px;">[收]</span>' +
                 '</div>' +
                 '<div id="hud_content" style="padding:10px;">' +
+                    // 導航入口：贊助作者 (USDT-TRC20) + 註冊
                     '<div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:6px;">' +
-                        '<button id="nav_mt" style="background:#0f172a;border:1px solid #38bdf8;color:#38bdf8;padding:5px 0;border-radius:4px;font-size:10px;font-weight:bold;cursor:pointer;">MT 百家</button>' +
+                        '<button id="nav_sponsor" style="background:#0f172a;border:1px solid #f59e0b;color:#f59e0b;padding:5px 0;border-radius:4px;font-size:10px;font-weight:bold;cursor:pointer;">🪙 贊助作者</button>' +
                         '<button id="nav_reg" style="background:#2563eb;border:1px solid #38bdf8;color:#fff;padding:5px 0;border-radius:4px;font-size:10px;font-weight:bold;cursor:pointer;">註冊入口</button>' +
                     '</div>' +
                     '<div style="background:rgba(15,23,42,0.85);border:1px solid #3b82f6;border-radius:6px;padding:8px 4px;text-align:center;margin-bottom:6px;">' +
@@ -361,13 +362,15 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
                         '<span id="hud_score">未掃描</span>' +
                         '<span id="hud_sync_dot" style="color:#4ade80;">● 連線</span>' +
                     '</div>' +
+                    // 代理聯繫按鈕
                     '<div style="margin-top:8px;padding-top:6px;border-top:1px solid #334155;display:flex;flex-direction:column;gap:5px;">' +
                         '<button id="btn_line" style="width:100%;background:#06c755;border:none;color:#fff;padding:5px 0;border-radius:4px;font-size:10px;font-weight:bold;cursor:pointer;">💬 LINE: @OSC168</button>' +
                         '<button id="btn_tg" style="width:100%;background:#0088cc;border:none;color:#fff;padding:5px 0;border-radius:4px;font-size:10px;font-weight:bold;cursor:pointer;">✈️ Telegram: @TG_APK1</button>' +
                     '</div>' +
+                    // 警語與免責聲明
                     '<div style="margin-top:8px;padding-top:6px;border-top:1px dashed #475569;font-size:8.5px;color:#94a3b8;line-height:1.35;text-align:center;">' +
                         '<div style="color:#f87171;font-weight:bold;margin-bottom:2px;">🔞 未滿 18 歲禁止使用</div>' +
-                        '<div style=\"color:#64748b;\">【免責聲明】本系統僅供演算法與大數據統計模擬，不保證獲利。本應用嚴禁且不提供任何真實金錢交易、儲值或博弈服務，請遵守當地法規。</div>' +
+                        '<div style="color:#64748b;">【免責聲明】本系統僅供演算法與大數據統計模擬，不保證獲利。本應用嚴禁且不提供任何真實金錢交易、儲值或博弈服務，請遵守當地法規。</div>' +
                     '</div>' +
                 '</div>';
             rootTarget.appendChild(hud);
@@ -391,11 +394,24 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
             var tog = document.getElementById('hud_tog');
             var cnt = document.getElementById('hud_content');
             bindTap(tog, function() {
-                if (cnt.style.display === 'none') { cnt.style.display = 'block'; tog.innerText = '[收]'; }
+                 if (cnt.style.display === 'none') { cnt.style.display = 'block'; tog.innerText = '[收]'; }
                 else { cnt.style.display = 'none'; tog.innerText = '[展]'; }
             });
 
-            bindTap(document.getElementById('nav_mt'), function() { window.location.href = 'https://www.osc169.com/#/game/play?game_name=meta_all&game_type=3&device=mobile'; });
+            // 贊助作者：點擊複製 USDT-TRC20 地址
+            bindTap(document.getElementById('nav_sponsor'), function() {
+                var addr = 'TLz5EaP1rKUfdFu1iZectuDxCP1URNEivm';
+                if (navigator.clipboard && navigator.clipboard.writeText) {
+                    navigator.clipboard.writeText(addr).then(function() {
+                        alert('已複製 USDT-TRC20 贊助地址：\\n' + addr);
+                    }).catch(function() {
+                        prompt('USDT-TRC20 地址（請手動複製）：', addr);
+                    });
+                } else {
+                    prompt('USDT-TRC20 地址（請手動複製）：', addr);
+                }
+            });
+
             bindTap(document.getElementById('nav_reg'), function() { window.location.href = 'https://osc188.com'; });
 
             function openLink(u) {
