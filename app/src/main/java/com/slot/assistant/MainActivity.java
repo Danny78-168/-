@@ -11,6 +11,9 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.webkit.WebViewCompat;
+import androidx.webkit.WebViewFeature;
+import java.util.Collections;
 
 public class MainActivity extends AppCompatActivity {
     private WebView webView;
@@ -48,25 +51,50 @@ public class MainActivity extends AppCompatActivity {
 
         settings.setUserAgentString("Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36");
 
-        // 註冊原生 Android 換台通道，徹底解決網址無法切換問題
+        // Android 原生通訊橋接
         webView.addJavascriptInterface(new Object() {
             @JavascriptInterface
-            public void navigateTo(final String url) {
+            public void switchGame(final String url) {
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
                         webView.loadUrl(url);
+                        webView.postDelayed(new Runnable() {
+                            @Override
+                            public void run() {
+                                webView.reload();
+                            }
+                        }, 350);
+                    }
+                });
+            }
+
+            @JavascriptInterface
+            public void onGameDataReceived(final int b, final int p, final int t, final int total) {
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        webView.evaluateJavascript(
+                            "if(window.updateHUD) window.updateHUD(" + b + "," + p + "," + t + "," + total + ");",
+                            null
+                        );
                     }
                 });
             }
         }, "AndroidBridge");
+
+        // 核心：利用 addDocumentStartJavaScript 穿透 iframe，在遊戲子框架載入時第一時間植入感應器
+        String coreScript = getInjectedScript();
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            WebViewCompat.addDocumentStartJavaScript(webView, coreScript, Collections.singleton("*"));
+        }
 
         webView.setWebChromeClient(new WebChromeClient());
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
-                injectUniversalAssistant(view);
+                view.evaluateJavascript(getInjectedScript(), null);
             }
         });
 
@@ -74,70 +102,123 @@ public class MainActivity extends AppCompatActivity {
         webView.loadUrl("https://www.osc169.com/#/game/play?game_name=meta_all&game_type=3&device=mobile");
     }
 
-    private void injectUniversalAssistant(WebView view) {
-        String js = "javascript:(function() {" +
+    private String getInjectedScript() {
+        return "javascript:(function() {" +
+            // ================= 1. 跨框架數據採集器（運行在 iframe 及主頁面） =================
+            "function dispatchGameStats(b, p, t, tot) {" +
+            "  if (isNaN(b) || isNaN(p) || (b === 0 && p === 0)) return;" +
+            "  tot = tot || (b + p + (t || 0));" +
+            "  try { if (window.AndroidBridge && window.AndroidBridge.onGameDataReceived) window.AndroidBridge.onGameDataReceived(b, p, t, tot); } catch(e){}" +
+            "  try { window.top.postMessage({ type: 'YINLU_AUTO_DATA', b: b, p: p, t: t, total: tot }, '*'); } catch(e){}" +
+            "  if (window.updateHUD) window.updateHUD(b, p, t, tot);" +
+            "}" +
+
+            // 攔截子框架 WebSocket 封包
+            "if (!window._wsHooked) {" +
+            "  window._wsHooked = true;" +
+            "  try {" +
+            "    var OrigWS = window.WebSocket;" +
+            "    if (OrigWS) {" +
+            "      var PatchedWS = function(url, protocols) {" +
+            "        var ws = protocols ? new OrigWS(url, protocols) : new OrigWS(url);" +
+            "        ws.addEventListener('message', function(evt) {" +
+            "          try {" +
+            "            var d = evt.data;" +
+            "            if (typeof d === 'string' && d.indexOf('{') !== -1) {" +
+            "              var j = JSON.parse(d);" +
+            "              if (j.banker !== undefined && j.player !== undefined) dispatchGameStats(parseInt(j.banker,10), parseInt(j.player,10), parseInt(j.tie||0,10));" +
+            "            }" +
+            "          } catch(e) {}" +
+            "        });" +
+            "        return ws;" +
+            "      };" +
+            "      PatchedWS.prototype = OrigWS.prototype;" +
+            "      PatchedWS.CONNECTING = OrigWS.CONNECTING; PatchedWS.OPEN = OrigWS.OPEN; PatchedWS.CLOSING = OrigWS.CLOSING; PatchedWS.CLOSED = OrigWS.CLOSED;" +
+            "      window.WebSocket = PatchedWS;" +
+            "    }" +
+            "  } catch(e) {}" +
+            "}" +
+
+            // 輪詢掃描畫面 DOM 文字
+            "setInterval(function() {" +
+            "  try {" +
+            "    if (document.querySelector('input[type=\"password\"]')) return;" +
+            "    var txt = document.body ? (document.body.innerText || '') : '';" +
+            "    if (txt) {" +
+            "      var mb = txt.match(/(?:莊|庄)\\s*[:：]?\\s*(\\d+)/);" +
+            "      var mp = txt.match(/(?:閒|闲)\\s*[:：]?\\s*(\\d+)/);" +
+            "      var mt = txt.match(/(?:和)\\s*[:：]?\\s*(\\d+)/);" +
+            "      var mtot = txt.match(/(?:總數|总数|總局|总局)\\s*[:：]?\\s*(\\d+)/);" +
+            "      if (mb && mp) {" +
+            "        var b = parseInt(mb[1], 10), p = parseInt(mp[1], 10);" +
+            "        var t = mt ? parseInt(mt[1], 10) : 0;" +
+            "        var tot = mtot ? parseInt(mtot[1], 10) : (b + p + t);" +
+            "        dispatchGameStats(b, p, t, tot);" +
+            "      }" +
+            "    }" +
+            "  } catch(e) {}" +
+            "}, 800);" +
+
+            // ================= 2. 極簡 HUD 介面（只在頂層視窗渲染） =================
+            "if (window.top !== window.self) return;" +
             "if (document.getElementById('slot-assistant-hud')) return;" +
 
-            // 1. 建立引路人 HUD 面板
             "var hud = document.createElement('div');" +
             "hud.id = 'slot-assistant-hud';" +
-            "hud.style.cssText = 'position:fixed;top:45px;right:8px;width:250px;background:#0b1120;border:1px solid #38bdf8;border-radius:10px;z-index:999999;color:#e2e8f0;font-size:12px;box-shadow:0 8px 24px rgba(0,0,0,0.85);font-family:sans-serif;user-select:none;';" +
+            "hud.style.cssText = 'position:fixed;top:55px;right:8px;width:170px;background:rgba(11,17,32,0.92);border:1px solid rgba(56,189,248,0.5);border-radius:10px;z-index:999999;color:#f1f5f9;font-size:11px;box-shadow:0 8px 24px rgba(0,0,0,0.8);font-family:sans-serif;user-select:none;backdrop-filter:blur(6px);';" +
             "hud.innerHTML = " +
-                "'<div id=\"hud_header\" style=\"padding:10px 12px;background:#1e293b;border-radius:10px 10px 0 0;font-weight:bold;color:#38bdf8;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #334155;cursor:move;touch-action:none;\">" +
-                    "<span>⚡ 引路人 AI 決策</span>" +
-                    "<span id=\"hud_tog\" style=\"cursor:pointer;color:#94a3b8;font-size:11px;\">[收合]</span>" +
+                "'<div id=\"hud_header\" style=\"padding:6px 8px;background:#1e293b;border-radius:10px 10px 0 0;font-weight:bold;color:#38bdf8;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #334155;cursor:move;touch-action:none;\">" +
+                    "<span>⚡ 引路人</span>" +
+                    "<div style=\"display:flex;gap:4px;\">" +
+                        "<button id=\"btn_toggle_game\" style=\"background:#0f172a;border:1px solid #38bdf8;color:#38bdf8;padding:1px 4px;border-radius:3px;font-size:10px;cursor:pointer;\">切DG</button>" +
+                        "<span id=\"hud_tog\" style=\"cursor:pointer;color:#94a3b8;font-size:10px;\">[收]</span>" +
+                    "</div>" +
                 "</div>' +" +
-                "'<div id=\"hud_content\" style=\"padding:12px;\">' +" +
-                    // 大廳切換（透過原生 AndroidBridge 調用）
-                    "'<div style=\"display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:8px;\">" +
-                        "<button id=\"btn_nav_mt\" style=\"background:#0f172a;border:1px solid #38bdf8;color:#38bdf8;padding:5px 0;border-radius:4px;font-size:11px;font-weight:bold;\">MT 百家</button>" +
-                        "<button id=\"btn_nav_dg\" style=\"background:#0f172a;border:1px solid #475569;color:#e2e8f0;padding:5px 0;border-radius:4px;font-size:11px;\">DG 百家</button>" +
+                "'<div id=\"hud_content\" style=\"padding:8px;text-align:center;\">' +" +
+                    // 核心推薦區塊
+                    "'<div style=\"background:rgba(15,23,42,0.8);border:1px solid #3b82f6;border-radius:6px;padding:6px 2px;margin-bottom:6px;\">" +
+                        "<div style=\"font-size:10px;color:#94a3b8;\">🎯 下一手 AI 推薦</div>" +
+                        "<div id=\"ai_pick_target\" style=\"font-size:18px;font-weight:900;color:#ef4444;margin:2px 0;\">感應中...</div>" +
+                        "<div id=\"ai_pick_desc\" style=\"font-size:10px;color:#38bdf8;\">等待遊戲路單</div>" +
                     "</div>' +" +
-                    // 當前桌況快速設定（直接對齊截圖 莊/閒/和）
-                    "'<div style=\"background:#020617;border:1px solid #1e293b;border-radius:6px;padding:8px;margin-bottom:8px;\">" +
-                        "<div style=\"display:flex;justify-content:space-between;font-size:11px;color:#94a3b8;margin-bottom:4px;\">" +
-                            "<span>當前局況設定:</span><span id=\"btn_reset_shoe\" style=\"color:#f87171;cursor:pointer;\">[重置]</span>" +
-                        "</div>" +
-                        "<div style=\"display:flex;gap:4px;align-items:center;\">" +
-                            "<span style=\"color:#ef4444;\">莊:</span><input id=\"inp_b\" type=\"number\" value=\"13\" style=\"width:35px;background:#1e293b;border:1px solid #334155;color:#fff;text-align:center;border-radius:3px;padding:1px;\">" +
-                            "<span style=\"color:#3b82f6;\">閒:</span><input id=\"inp_p\" type=\"number\" value=\"17\" style=\"width:35px;background:#1e293b;border:1px solid #334155;color:#fff;text-align:center;border-radius:3px;padding:1px;\">" +
-                            "<span style=\"color:#22c55e;\">和:</span><input id=\"inp_t\" type=\"number\" value=\"4\" style=\"width:35px;background:#1e293b;border:1px solid #334155;color:#fff;text-align:center;border-radius:3px;padding:1px;\">" +
-                            "<button id=\"btn_sync_inputs\" style=\"background:#2563eb;color:#fff;border:none;padding:2px 6px;border-radius:3px;font-size:10px;cursor:pointer;\">套用</button>" +
-                        "</div>" +
-                    "</div>' +" +
-                    // AI 下一手決策推薦
-                    "'<div style=\"background:#0f172a;border:1px solid #3b82f6;border-radius:8px;padding:10px;text-align:center;margin-bottom:8px;\">" +
-                        "<div style=\"color:#94a3b8;font-size:11px;margin-bottom:2px;\">🎯 下一手決策推薦</div>" +
-                        "<div id=\"ai_pick\" style=\"font-size:1.6rem;font-weight:900;color:#ef4444;margin:2px 0;\">分析中...</div>" +
-                        "<div id=\"ai_desc\" style=\"font-size:11px;color:#38bdf8;\">正在計算方差動量...</div>" +
-                    "</div>' +" +
-                    // 雙模型數值分析
-                    "'<div style=\"font-size:11px;background:#020617;border-radius:6px;padding:8px;border:1px solid #1e293b;margin-bottom:8px;\">" +
-                        "<div style=\"display:flex;justify-content:space-between;margin-bottom:4px;\">" +
-                            "<span style=\"color:#10b981;\">OpenAI (動量追隨):</span>" +
-                            "<b id=\"m_openai\">莊 (50%)</b>" +
-                        "</div>" +
-                        "<div style=\"display:flex;justify-content:space-between;\">" +
-                            "<span style=\"color:#60a5fa;\">Gemini (均值對沖):</span>" +
-                            "<b id=\"m_gemini\">閒 (50%)</b>" +
-                        "</div>" +
-                    "</div>' +" +
-                    // 開出下一局一鍵追蹤鍵
-                    "'<div style=\"display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;\">" +
-                        "<button id=\"btn_add_b\" style=\"background:#dc2626;color:#fff;border:none;padding:6px 0;border-radius:4px;font-weight:bold;\">＋ 莊</button>" +
-                        "<button id=\"btn_add_p\" style=\"background:#2563eb;color:#fff;border:none;padding:6px 0;border-radius:4px;font-weight:bold;\">＋ 閒</button>" +
-                        "<button id=\"btn_add_t\" style=\"background:#16a34a;color:#fff;border:none;padding:6px 0;border-radius:4px;font-weight:bold;\">＋ 和</button>" +
+                    // 狀態欄
+                    "'<div style=\"display:flex;justify-content:space-between;font-size:10px;color:#94a3b8;\">" +
+                        "<span id=\"hud_score\">莊0 閒0 和0</span>" +
+                        "<span id=\"hud_sync_dot\" style=\"color:#4ade80;\">● 連線</span>" +
                     "</div>' +" +
                 "'</div>';" +
             "document.body.appendChild(hud);" +
 
-            // 收合邏輯
+            // 跨框架 postMessage 接收
+            "window.addEventListener('message', function(e) {" +
+            "  if (e.data && e.data.type === 'YINLU_AUTO_DATA') {" +
+            "    window.updateHUD(e.data.b, e.data.p, e.data.t, e.data.total);" +
+            "  }" +
+            "});" +
+
+            // 快捷換台邏輯
+            "var isDG = location.href.indexOf('game_name=dg') !== -1;" +
+            "var btnToggle = document.getElementById('btn_toggle_game');" +
+            "btnToggle.innerText = isDG ? '切MT' : '切DG';" +
+            "btnToggle.onclick = function(e) {" +
+            "  e.stopPropagation();" +
+            "  var target = isDG " +
+            "    ? 'https://www.osc169.com/#/game/play?game_name=meta_all&game_type=3&device=mobile'" +
+            "    : 'https://www.osc169.com/#/game/play?game_name=dg&game_type=3&device=mobile';" +
+            "  if (window.AndroidBridge && window.AndroidBridge.switchGame) {" +
+            "    window.AndroidBridge.switchGame(target);" +
+            "  } else {" +
+            "    location.replace(target); location.reload();" +
+            "  }" +
+            "};" +
+
+            // 收合與展開
             "var tog = document.getElementById('hud_tog');" +
             "var cnt = document.getElementById('hud_content');" +
             "tog.onclick = function(e) {" +
             "  e.stopPropagation();" +
-            "  if (cnt.style.display === 'none') { cnt.style.display = 'block'; tog.innerText = '[收合]'; }" +
-            "  else { cnt.style.display = 'none'; tog.innerText = '[展開]'; }" +
+            "  if (cnt.style.display === 'none') { cnt.style.display = 'block'; tog.innerText = '[收]'; }" +
+            "  else { cnt.style.display = 'none'; tog.innerText = '[展]'; }" +
             "};" +
 
             // 觸控拖曳
@@ -153,113 +234,39 @@ public class MainActivity extends AppCompatActivity {
             "  hud.style.left = Math.max(0, Math.min(nX, window.innerWidth - hud.offsetWidth)) + 'px';" +
             "  hud.style.top = Math.max(0, Math.min(nY, window.innerHeight - hud.offsetHeight)) + 'px';" +
             "  hud.style.right = 'auto';" +
-            "}, { passive: true });" +
+            "}, { passive: false });" +
             "header.addEventListener('touchend', function() { isDrag = false; });" +
 
-            // 大廳切換按鈕綁定（使用 Android 原生通道）
-            "document.getElementById('btn_nav_mt').onclick = function() {" +
-            "  if (window.AndroidBridge && window.AndroidBridge.navigateTo) {" +
-            "    window.AndroidBridge.navigateTo('https://www.osc169.com/#/game/play?game_name=meta_all&game_type=3&device=mobile');" +
-            "  } else {" +
-            "    window.location.href = 'https://www.osc169.com/#/game/play?game_name=meta_all&game_type=3&device=mobile';" +
-            "    window.location.reload();" +
-            "  }" +
-            "};" +
-            "document.getElementById('btn_nav_dg').onclick = function() {" +
-            "  if (window.AndroidBridge && window.AndroidBridge.navigateTo) {" +
-            "    window.AndroidBridge.navigateTo('https://www.osc169.com/#/game/play?game_name=dg&game_type=3&device=mobile');" +
-            "  } else {" +
-            "    window.location.href = 'https://www.osc169.com/#/game/play?game_name=dg&game_type=3&device=mobile';" +
-            "    window.location.reload();" +
-            "  }" +
-            "};" +
+            // AI 自動決策推薦核心更新函數
+            "window.updateHUD = function(b, p, t, tot) {" +
+            "  tot = tot || (b + p + t);" +
+            "  var delta = p - b;" + // 閒與莊的差額
+            "  var pick = '莊', conf = 60, reason = '';" +
 
-            // AI 決策計算核心
-            "var bCount = 13, pCount = 17, tCount = 4;" +
-            "var recentHistory = ['B', 'P', 'P', 'B', 'B', 'P', 'P'];" +
-
-            "function evaluateNextBet() {" +
-            "  var total = bCount + pCount + tCount;" +
-            "  var delta = pCount - bCount;" + // 閒多於莊的差額
-
-            // 1. OpenAI 趨勢動量模型（看末端連續度）
-            "  var lastWin = recentHistory.length > 0 ? recentHistory[recentHistory.length - 1] : 'P';" +
-            "  var streak = 0;" +
-            "  for (var i = recentHistory.length - 1; i >= 0; i--) {" +
-            "    if (recentHistory[i] === lastWin) streak++; else break;" +
-            "  }" +
-            "  var openTarget = '閒', openConf = 56;" +
-            "  if (streak >= 2) {" +
-            "    openTarget = lastWin === 'B' ? '莊' : '閒';" +
-            "    openConf = Math.min(88, 64 + streak * 6);" +
-            "  } else {" +
-            "    openTarget = lastWin === 'B' ? '莊' : '閒';" +
-            "    openConf = 58 + (total % 5);" +
-            "  }" +
-
-            // 2. Gemini 均值回歸模型（大數法則對沖）
-            "  var geminiTarget = '莊', geminiConf = 54;" +
+            // 均值回歸與動量雙模混合算法
             "  if (delta >= 3) {" +
-            "    geminiTarget = '莊';" +
-            "    geminiConf = Math.min(86, 62 + delta * 4);" + // 閒大幅領先，強烈修正壓莊
+            "    pick = '莊'; conf = Math.min(88, 62 + delta * 4);" +
+            "    reason = '閒領先 ' + delta + ' 局 (均值修正)';" +
             "  } else if (delta <= -3) {" +
-            "    geminiTarget = '閒';" +
-            "    geminiConf = Math.min(86, 62 + Math.abs(delta) * 4);" +
+            "    pick = '閒'; conf = Math.min(88, 62 + Math.abs(delta) * 4);" +
+            "    reason = '莊領先 ' + Math.abs(delta) + ' 局 (均值修正)';" +
             "  } else {" +
-            "    geminiTarget = '莊';" +
-            "    geminiConf = 55;" +
+            "    pick = (b >= p) ? '莊' : '閒';" +
+            "    conf = 58 + (tot % 6);" +
+            "    reason = '趨勢平衡推薦';" +
             "  }" +
 
-            "  document.getElementById('m_openai').innerHTML = '<span style=\"color:' + (openTarget==='莊'?'#ef4444':'#3b82f6') + '\">' + openTarget + ' (' + openConf + '%)</span>';" +
-            "  document.getElementById('m_gemini').innerHTML = '<span style=\"color:' + (geminiTarget==='莊'?'#ef4444':'#3b82f6') + '\">' + geminiTarget + ' (' + geminiConf + '%)</span>';" +
-
-            // 綜合下一手強推
-            "  var pick = document.getElementById('ai_pick');" +
-            "  var desc = document.getElementById('ai_desc');" +
-            "  if (geminiConf >= openConf) {" +
-            "    pick.innerText = '🎯 推薦【' + geminiTarget + '】';" +
-            "    pick.style.color = geminiTarget === '莊' ? '#ef4444' : '#3b82f6';" +
-            "    desc.innerText = '閒偏離領先 ' + delta + ' 局 均值修正指數 ' + geminiConf + '%';" +
-            "  } else {" +
-            "    pick.innerText = '⚡ 順勢【' + openTarget + '】';" +
-            "    pick.style.color = openTarget === '莊' ? '#ef4444' : '#3b82f6';" +
-            "    desc.innerText = '動量趨勢領先 信心度 ' + openConf + '%';" +
+            "  var tElem = document.getElementById('ai_pick_target');" +
+            "  var dElem = document.getElementById('ai_pick_desc');" +
+            "  var sElem = document.getElementById('hud_score');" +
+            "  if (tElem) {" +
+            "    tElem.innerText = '【' + pick + '】 ' + conf + '%';" +
+            "    tElem.style.color = (pick === '莊') ? '#ef4444' : '#3b82f6';" +
             "  }" +
-            "}" +
-
-            // 輸入框同步
-            "document.getElementById('btn_sync_inputs').onclick = function() {" +
-            "  bCount = parseInt(document.getElementById('inp_b').value) || 0;" +
-            "  pCount = parseInt(document.getElementById('inp_p').value) || 0;" +
-            "  tCount = parseInt(document.getElementById('inp_t').value) || 0;" +
-            "  evaluateNextBet();" +
+            "  if (dElem) dElem.innerText = reason;" +
+            "  if (sElem) sElem.innerText = '莊' + b + ' 閒' + p + ' 和' + t + ' (' + tot + '局)';" +
             "};" +
-
-            "document.getElementById('btn_reset_shoe').onclick = function() {" +
-            "  bCount = 0; pCount = 0; tCount = 0; recentHistory = [];" +
-            "  document.getElementById('inp_b').value = 0;" +
-            "  document.getElementById('inp_p').value = 0;" +
-            "  document.getElementById('inp_t').value = 0;" +
-            "  evaluateNextBet();" +
-            "};" +
-
-            // 實時加球
-            "document.getElementById('btn_add_b').onclick = function() {" +
-            "  bCount++; document.getElementById('inp_b').value = bCount;" +
-            "  recentHistory.push('B'); evaluateNextBet();" +
-            "};" +
-            "document.getElementById('btn_add_p').onclick = function() {" +
-            "  pCount++; document.getElementById('inp_p').value = pCount;" +
-            "  recentHistory.push('P'); evaluateNextBet();" +
-            "};" +
-            "document.getElementById('btn_add_t').onclick = function() {" +
-            "  tCount++; document.getElementById('inp_t').value = tCount;" +
-            "  recentHistory.push('T'); evaluateNextBet();" +
-            "};" +
-
-            "evaluateNextBet();" +
             "})();";
-        view.evaluateJavascript(js, null);
     }
 
     @Override
