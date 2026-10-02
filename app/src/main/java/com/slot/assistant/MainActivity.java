@@ -445,24 +445,27 @@ public class MainActivity extends AppCompatActivity {
             "}" +
 
             "var curMode = '通用';" +
-            "var defaultW = 210;" +
+            "var defaultW = 215;" +
+            "var defaultH = 340;" +
 
             "var hud = document.createElement('div');" +
             "hud.id = 'slot-assistant-hud';" +
-            "hud.style.cssText = 'position:fixed;top:60px;right:10px;width:' + defaultW + 'px;min-width:165px;max-width:360px;background:rgba(11,17,32,0.96);border:1.5px solid #38bdf8;border-radius:10px;z-index:2147483647;color:#f1f5f9;font-size:11px;box-shadow:0 8px 30px rgba(0,0,0,0.9);font-family:sans-serif;user-select:none;backdrop-filter:blur(8px);transition:width 0.1s ease-out;';" +
+            // 啟用 Flexbox 縱向佈局，並綁定初始 width 與 height
+            "hud.style.cssText = 'position:fixed;top:60px;right:10px;width:' + defaultW + 'px;height:' + defaultH + 'px;min-width:160px;max-width:380px;min-height:160px;max-height:85vh;background:rgba(11,17,32,0.96);border:1.5px solid #38bdf8;border-radius:10px;z-index:2147483647;color:#f1f5f9;font-size:11px;box-shadow:0 8px 30px rgba(0,0,0,0.9);font-family:sans-serif;user-select:none;backdrop-filter:blur(8px);display:flex;flex-direction:column;box-sizing:border-box;overflow:hidden;';" +
             "hud.innerHTML = " +
-                "'<div id=\"hud_header\" style=\"padding:7px 8px;background:#1e293b;border-radius:9px 9px 0 0;font-weight:bold;color:#38bdf8;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #334155;cursor:move;touch-action:none;\">" +
+                "'<div id=\"hud_header\" style=\"padding:7px 8px;background:#1e293b;border-radius:9px 9px 0 0;font-weight:bold;color:#38bdf8;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #334155;cursor:move;touch-action:none;flex-shrink:0;\">" +
                     "<span id=\"hud_title_txt\">👁 Astra 深度推論</span>" +
-                    "<div style=\"display:flex;align-items:center;gap:4px;\">" +
+                    "<div style=\"display:flex;align-items:center;gap:3px;\">" +
                         "<span id=\"hud_scale_m\" style=\"cursor:pointer;color:#94a3b8;font-size:11px;font-weight:bold;padding:0 3px;\">[-]</span>" +
                         "<span id=\"hud_scale_p\" style=\"cursor:pointer;color:#94a3b8;font-size:11px;font-weight:bold;padding:0 3px;\">[+]</span>" +
                         "<span id=\"hud_tog\" style=\"cursor:pointer;color:#38bdf8;font-size:11px;font-weight:bold;padding:0 2px;\">[收]</span>" +
                     "</div>" +
                 "</div>' +" +
-                "'<div id=\"hud_content\" style=\"padding:10px 10px 14px 10px;\">' +" +
+                // 內容區啟用自動捲動：高度變矮時自動滾動，絕不被截斷
+                "'<div id=\"hud_content\" style=\"padding:8px 8px 16px 8px;flex:1;min-height:0;overflow-y:auto;-webkit-overflow-scrolling:touch;\">' +" +
                     "'<div style=\"display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:6px;\">" +
                         "<button id=\"nav_sponsor\" style=\"background:#0f172a;border:1px solid #f59e0b;color:#f59e0b;padding:5px 0;border-radius:4px;font-size:10px;font-weight:bold;cursor:pointer;\">🪙 贊助作者</button>" +
-                        "<button id=\"nav_reg\" style=\"background:#2563eb;border:1px solid #38bdf8;color:#fff;padding:5px 0;border-radius:4px;font-size:10px;font-weight:bold;cursor:pointer;\">註冊入口</button>" +
+                                "<button id=\"nav_reg\" style=\"background:#2563eb;border:1px solid #38bdf8;color:#fff;padding:5px 0;border-radius:4px;font-size:10px;font-weight:bold;cursor:pointer;\">註冊入口</button>" +
                     "</div>' +" +
                     "'<div style=\"background:rgba(15,23,42,0.85);border:1px solid #3b82f6;border-radius:6px;padding:8px 4px;text-align:center;margin-bottom:6px;\">" +
                         "<div style=\"font-size:10px;color:#94a3b8;\">🎯 深度路單精算建議</div>" +
@@ -483,11 +486,11 @@ public class MainActivity extends AppCompatActivity {
                         "'<div style=\"color:#64748b;\">【免責聲明】本系統僅供演算法模擬，不保證獲利。本應用嚴禁真實金錢交易。</div>' +" +
                     "'</div>' +" +
                 "'</div>' +" +
-                // 右下角自由觸控伸縮拉桿
-                "'<div id=\"hud_resize_handle\" style=\"position:absolute;right:0;bottom:0;width:20px;height:20px;cursor:se-resize;display:flex;align-items:flex-end;justify-content:flex-end;padding:0 3px 2px 0;color:#38bdf8;font-size:11px;touch-action:none;opacity:0.85;\">◢</div>';" +
+                // 右下角四向拉伸把手
+                "'<div id=\"hud_resize_handle\" style=\"position:absolute;right:0;bottom:0;width:22px;height:22px;cursor:se-resize;display:flex;align-items:flex-end;justify-content:flex-end;padding:0 3px 2px 0;color:#38bdf8;font-size:12px;touch-action:none;opacity:0.9;z-index:99;\">◢</div>';" +
             "rootTarget.appendChild(hud);" +
 
-            // 拖曳移動
+            // 頂部拖曳移動
             "var header = document.getElementById('hud_header');" +
             "var isDrag = false, sX, sY, iL, iT;" +
             "header.addEventListener('touchstart', function(e) {" +
@@ -504,30 +507,39 @@ public class MainActivity extends AppCompatActivity {
             "}, { passive: false });" +
             "header.addEventListener('touchend', function() { isDrag = false; });" +
 
-            // 右下角觸控拖曳自由縮放
+            // 右下角雙軸（寬度 + 高度）同步觸控拉伸
             "var handle = document.getElementById('hud_resize_handle');" +
-            "var isResizing = false, rStartX, rStartW;" +
+            "var isResizing = false, rStartX, rStartY, rStartW, rStartH;" +
             "handle.addEventListener('touchstart', function(e) {" +
-            "  e.stopPropagation(); isResizing = true;" +
-            "  rStartX = e.touches[0].clientX; rStartW = hud.offsetWidth;" +
+            "  e.stopPropagation(); e.preventDefault();" +
+            "  isResizing = true;" +
+            "  rStartX = e.touches[0].clientX; rStartY = e.touches[0].clientY;" +
+            "  rStartW = hud.offsetWidth; rStartH = hud.offsetHeight;" +
             "}, { passive: false });" +
             "window.addEventListener('touchmove', function(e) {" +
             "  if (!isResizing) return;" +
-            "  var delta = e.touches[0].clientX - rStartX;" +
-            "  var targetW = Math.max(165, Math.min(360, rStartW + delta));" +
+            "  var deltaX = e.touches[0].clientX - rStartX;" +
+            "  var deltaY = e.touches[0].clientY - rStartY;" +
+            "  var targetW = Math.max(160, Math.min(window.innerWidth - 10, rStartW + deltaX));" +
+            "  var targetH = Math.max(160, Math.min(window.innerHeight - 30, rStartH + deltaY));" +
             "  hud.style.width = targetW + 'px';" +
-            "  defaultW = targetW;" +
+            "  hud.style.height = targetH + 'px';" +
+            "  defaultW = targetW; defaultH = targetH;" +
             "}, { passive: false });" +
             "window.addEventListener('touchend', function() { isResizing = false; });" +
 
-            // 頂部一鍵加減寬度
+            // 頂部一鍵等比例放大/縮小
             "bindTap(document.getElementById('hud_scale_m'), function() {" +
-            "  defaultW = Math.max(165, hud.offsetWidth - 25);" +
+            "  defaultW = Math.max(160, hud.offsetWidth - 25);" +
+            "  defaultH = Math.max(160, hud.offsetHeight - 40);" +
             "  hud.style.width = defaultW + 'px';" +
+            "  hud.style.height = defaultH + 'px';" +
             "});" +
             "bindTap(document.getElementById('hud_scale_p'), function() {" +
-            "  defaultW = Math.min(360, hud.offsetWidth + 25);" +
+            "  defaultW = Math.min(window.innerWidth - 10, hud.offsetWidth + 25);" +
+            "  defaultH = Math.min(window.innerHeight - 30, hud.offsetHeight + 40);" +
             "  hud.style.width = defaultW + 'px';" +
+            "  hud.style.height = defaultH + 'px';" +
             "});" +
 
             // 膠囊化智慧收合
@@ -537,12 +549,12 @@ public class MainActivity extends AppCompatActivity {
             "bindTap(tog, function() {" +
             "  if (cnt.style.display === 'none') {" +
             "    cnt.style.display = 'block'; handle.style.display = 'flex';" +
-            "    hud.style.width = defaultW + 'px';" +
+            "    hud.style.width = defaultW + 'px'; hud.style.height = defaultH + 'px';" +
             "    titleTxt.innerText = '👁 Astra 深度推論';" +
             "    tog.innerText = '[收]';" +
             "  } else {" +
             "    cnt.style.display = 'none'; handle.style.display = 'none';" +
-            "    hud.style.width = '76px';" +
+            "    hud.style.width = '76px'; hud.style.height = 'auto';" +
             "    titleTxt.innerText = '👁';" +
             "    tog.innerText = '[展]';" +
             "  }" +
