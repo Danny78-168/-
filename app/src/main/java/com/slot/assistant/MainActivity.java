@@ -49,20 +49,20 @@ public class MainActivity extends AppCompatActivity {
 
         settings.setUserAgentString("Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36");
 
-        // 原生換台通道：先載入空白頁再載入新網址，徹底解決 Vue SPA 換台失效
+        // 原生換台通道：避免 about:blank 中斷連線，確保 SPA 乾淨切換
         webView.addJavascriptInterface(new Object() {
             @JavascriptInterface
             public void switchGame(final String targetUrl) {
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
-                        webView.loadUrl("about:blank");
+                        webView.loadUrl(targetUrl);
                         webView.postDelayed(new Runnable() {
                             @Override
                             public void run() {
-                                webView.loadUrl(targetUrl);
+                                webView.reload();
                             }
-                        }, 120);
+                        }, 200);
                     }
                 });
             }
@@ -83,7 +83,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void injectAssistantScript(WebView view) {
         String js = "javascript:(function() {" +
-            // ================= 1. 表單自動同步器 (防止登入卡住) =================
+            // ================= 1. 表單自動同步器 (防止登入驗證卡住) =================
             "function syncInputs() {" +
             "  var active = document.activeElement;" +
             "  if (active && active.tagName === 'INPUT') return;" +
@@ -163,7 +163,7 @@ public class MainActivity extends AppCompatActivity {
                 "'</div>';" +
             "document.body.appendChild(hud);" +
 
-            // 收合功能
+            // 收合與展開
             "var tog = document.getElementById('hud_tog');" +
             "var cnt = document.getElementById('hud_content');" +
             "tog.onclick = function(e) {" +
@@ -212,7 +212,8 @@ public class MainActivity extends AppCompatActivity {
             "  if (window.AndroidBridge && window.AndroidBridge.switchGame) {" +
             "    window.AndroidBridge.switchGame(url);" +
             "  } else {" +
-            "    location.href = url;" +
+            "    window.location.href = url;" +
+            "    setTimeout(function() { window.location.reload(); }, 150);" +
             "  }" +
             "}" +
             "document.getElementById('nav_mt').onclick = function(e) { e.stopPropagation(); navTo('https://www.osc169.com/#/game/play?game_name=meta_all&game_type=3&device=mobile'); };" +
@@ -269,65 +270,67 @@ public class MainActivity extends AppCompatActivity {
             "renderSlotButtons();" +
             "updateSlotCalc();" +
 
-            // ================= 4. 百家樂 DOM 數據讀取與 AI 決策 =================
-            "var lastB = -1, lastP = -1, lastT = -1;" +
+            // ================= 4. 百家樂三態自適應路單抓取與 AI 決策 =================
+            "var lastB = -1, lastP = -1, lastT = -1, lastTot = -1;" +
+
+            "function getAllPageText() {" +
+            "  var txt = document.body ? (document.body.innerText || '') : '';" +
+            "  try {" +
+            "    var iframes = document.querySelectorAll('iframe');" +
+            "    for (var i = 0; i < iframes.length; i++) {" +
+            "      try {" +
+            "        var doc = iframes[i].contentDocument || iframes[i].contentWindow.document;" +
+            "        if (doc && doc.body) txt += '\\n' + doc.body.innerText;" +
+            "      } catch(e) {}" +
+            "    }" +
+            "  } catch(e) {}" +
+            "  return txt;" +
+            "}" +
 
             "function scanGameData() {" +
             "  try {" +
             "    var active = document.activeElement;" +
             "    if (active && active.tagName === 'INPUT') return;" +
 
-            "    var txt = document.body ? (document.body.innerText || '') : '';" +
+            "    var txt = getAllPageText();" +
             "    if (!txt) return;" +
 
-            // 核心特徵匹配：直接尋找「莊 XX 閒 YY 和 ZZ」排版，避開賠率標籤
-            "    var m = txt.match(/(?:莊|庄)\\s*[:：]?\\s*(\\d+)[^0-9\\n\\r]{1,10}(?:閒|闲)\\s*[:：]?\\s*(\\d+)[^0-9\\n\\r]{1,10}(?:和)\\s*[:：]?\\s*(\\d+)/);" +
-            "    if (m) {" +
-            "      var b = parseInt(m[1], 10), p = parseInt(m[2], 10), t = parseInt(m[3], 10);" +
-            "      if (b !== lastB || p !== lastP || t !== lastT) {" +
-            "        lastB = b; lastP = p; lastT = t;" +
-            "        var tot = b + p + t;" +
-            "        var delta = p - b;" +
-            "        var pick = '莊', conf = 60, reason = '';" +
+            "    var b = -1, p = -1, t = 0, tot = -1;" +
 
-            "        if (delta >= 3) {" +
-            "          pick = '莊'; conf = Math.min(88, 62 + delta * 4);" +
-            "          reason = '閒偏離 ' + delta + ' 局 (均值修正)';" +
-            "        } else if (delta <= -3) {" +
-            "          pick = '閒'; conf = Math.min(88, 62 + Math.abs(delta) * 4);" +
-            "          reason = '莊偏離 ' + Math.abs(delta) + ' 局 (均值修正)';" +
-            "        } else {" +
-            "          pick = (b >= p) ? '莊' : '閒';" +
-            "          conf = 58 + (tot % 6);" +
-            "          reason = '動量平衡推薦';" +
+            // 優先模式 1：牌桌內底欄（莊 XX ... 閒 YY ... 和 ZZ ... 總數 WW）
+            "    var mTable = /(?:莊|庄)\\s*[:：]?\\s*(\\d+)(?!\\s*:)?[\\s\\S]{0,35}(?:閒|闲)\\s*[:：]?\\s*(\\d+)(?!\\s*:)?[\\s\\S]{0,35}(?:和)\\s*[:：]?\\s*(\\d+)(?!\\s*:)?[\\s\\S]{0,60}(?:總數|总数|總局|总局|局數|局数)\\s*[:：]?\\s*(\\d+)/i.exec(txt);" +
+            "    if (mTable) {" +
+            "      b = parseInt(mTable[1], 10);" +
+            "      p = parseInt(mTable[2], 10);" +
+            "      t = parseInt(mTable[3], 10);" +
+            "      tot = parseInt(mTable[4], 10);" +
+            "    } else {" +
+            // 優先模式 2：大廳卡片（局數 WW ... 莊 XX ... 閒 YY ... 和 ZZ）
+            "      var mLobby = /(?:局數|局数|總數|总数|總局|总局)\\s*[:：]?\\s*(\\d+)[\\s\\S]{0,35}(?:莊|庄)\\s*[:：]?\\s*(\\d+)(?!\\s*:)?[\\s\\S]{0,35}(?:閒|闲)\\s*[:：]?\\s*(\\d+)(?!\\s*:)?[\\s\\S]{0,35}(?:和)\\s*[:：]?\\s*(\\d+)(?!\\s*)?/i.exec(txt);" +
+            "      if (mLobby) {" +
+            "        tot = parseInt(mLobby[1], 10);" +
+            "        b = parseInt(mLobby[2], 10);" +
+            "        p = parseInt(mLobby[3], 10);" +
+            "        t = parseInt(mLobby[4], 10);" +
+            "      } else {" +
+            // 模式 3：標準三連兜底（莊 XX ... 閒 YY ... 和 ZZ）
+            "        var mFall = /(?:莊|庄)\\s*[:：]?\\s*(\\d+)(?!\\s*:)?[\\s\\S]{0,35}(?:閒|闲)\\s*[:：]?\\s*(\\d+)(?!\\s*:)?[\\s\\S]{0,35}(?:和)\\s*[:：]?\\s*(\\d+)(?!\\s*)?/i.exec(txt);" +
+            "        if (mFall) {" +
+            "          b = parseInt(mFall[1], 10);" +
+            "          p = parseInt(mFall[2], 10);" +
+            "          t = parseInt(mFall[3], 10);" +
+            "          tot = b + p + t;" +
             "        }" +
-
-            "        var tElem = document.getElementById('ai_pick_target');" +
-            "        var dElem = document.getElementById('ai_pick_desc');" +
-            "        var sElem = document.getElementById('hud_score');" +
-            "        if (tElem) {" +
-            "          tElem.innerText = '【' + pick + '】 ' + conf + '%';" +
-            "          tElem.style.color = (pick === '莊') ? '#ef4444' : '#3b82f6';" +
-            "        }" +
-            "        if (dElem) dElem.innerText = reason;" +
-            "        if (sElem) sElem.innerText = '莊' + b + ' 閒' + p + ' 和' + t + ' (' + tot + '局)';" +
             "      }" +
             "    }" +
-            "  } catch(e) {}" +
-            "}" +
 
-            "setInterval(scanGameData, 600);" +
-            "scanGameData();" +
-            "})();";
-        view.evaluateJavascript(js, null);
-    }
+            "    if (b !== -1 && p !== -1 && (b + p + t) > 0 && (b !== lastB || p !== lastP || t !== lastT || tot !== lastTot)) {" +
+            "      lastB = b; lastP = p; lastT = t; lastTot = (tot > 0 ? tot : (b + p + t));" +
+            "      var currentTot = lastTot;" +
+            "      var delta = p - b;" +
+            "      var pick = '莊', conf = 60, reason = '';" +
 
-    @Override
-    public void onBackPressed() {
-        if (webView.canGoBack()) {
-            webView.goBack();
-        } else {
-            super.onBackPressed();
-        }
-    }
-}
+            // AI 雙模型決策引擎 (均值修正 + 動量平衡)
+            "      if (delta >= 3) {" +
+            "        pick = '莊'; conf = Math.min(88, 62 + delta * 4);" +
+            
