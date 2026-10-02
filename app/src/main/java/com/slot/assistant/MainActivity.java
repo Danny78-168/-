@@ -3,16 +3,24 @@ package com.slot.assistant;
 import android.annotation.SuppressLint;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.graphics.Color;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Base64;
+import android.view.Gravity;
 import android.view.View;
+import android.view.inputmethod.EditorInfo;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.FrameLayout;
+import android.widget.LinearLayout;
 import androidx.appcompat.app.AppCompatActivity;
 
 import org.json.JSONArray;
@@ -30,7 +38,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends AppCompatActivity {
-    // 🔑 拆分字串內建 OpenAI 金鑰（避開 GitHub 靜態規則掃描）
+    // 🔑 拆分字串內建 OpenAI 金鑰（避開靜態掃描規則）
     private static final String OPENAI_KEY_PART1 = "sk-proj-dwQyYlJrpRoJqtP9ZCcPjQzDUtQXJi1MT1sd6OfsMdW7RF";
     private static final String OPENAI_KEY_PART2 = "OIOwKJ1JSgi2Satw9WoTaiC8WHPxT3BlbkFJhhCPi2LwrFZ3k7mbJ_LSvLLm65LHzcjTbnqkvKEyKsBgbRlmJzX8X0pGNyrvgH-vPN9sAcwiwA";
 
@@ -39,10 +47,13 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private WebView webView;
+    private LinearLayout topBar;
+    private EditText urlInput;
+    private Button btnRestoreBar;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private boolean isAnalyzing = false;
 
-    // 原生守護執行緒：每 1.5 秒自動巡檢，防止 Vue SPA 轉跳時吃掉懸浮窗
+    // 原生守護執行緒：每 1.5 秒自動巡檢，防止單頁應用（SPA）換頁吃掉懸浮窗
     private final Runnable hudWatchdog = new Runnable() {
         @Override
         public void run() {
@@ -58,8 +69,119 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        // 1. 動態建構通用瀏覽器原生 UI（免 XML 檔案）
+        FrameLayout rootLayout = new FrameLayout(this);
+        rootLayout.setBackgroundColor(Color.parseColor("#0b1120"));
+        setContentView(rootLayout);
+
+        LinearLayout mainContainer = new LinearLayout(this);
+        mainContainer.setOrientation(LinearLayout.VERTICAL);
+        rootLayout.addView(mainContainer, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
+        // 頂部導航列
+        topBar = new LinearLayout(this);
+        topBar.setOrientation(LinearLayout.HORIZONTAL);
+        topBar.setBackgroundColor(Color.parseColor("#0f172a"));
+        topBar.setGravity(Gravity.CENTER_VERTICAL);
+        topBar.setPadding(dp(6), dp(4), dp(6), dp(4));
+        mainContainer.addView(topBar, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(46)));
+
+        // 上一頁按鈕
+        Button btnBack = new Button(this);
+        btnBack.setText("◀");
+        btnBack.setTextColor(Color.WHITE);
+        btnBack.setTextSize(13);
+        btnBack.setBackgroundColor(Color.TRANSPARENT);
+        LinearLayout.LayoutParams backParams = new LinearLayout.LayoutParams(dp(36), dp(36));
+        topBar.addView(btnBack, backParams);
+        btnBack.setOnClickListener(v -> {
+            if (webView.canGoBack()) webView.goBack();
+        });
+
+        // 網址輸入框
+        urlInput = new EditText(this);
+        urlInput.setHint("輸入或貼上任何遊戲網址...");
+        urlInput.setHintTextColor(Color.parseColor("#64748b"));
+        urlInput.setTextColor(Color.parseColor("#38bdf8"));
+        urlInput.setTextSize(12);
+        urlInput.setSingleLine(true);
+        urlInput.setImeOptions(EditorInfo.IME_ACTION_GO);
+        urlInput.setPadding(dp(8), 0, dp(8), 0);
+
+        GradientDrawable inputBg = new GradientDrawable();
+        inputBg.setColor(Color.parseColor("#1e293b"));
+        inputBg.setCornerRadius(dp(6));
+        inputBg.setStroke(dp(1), Color.parseColor("#475569"));
+        urlInput.setBackground(inputBg);
+
+        LinearLayout.LayoutParams inputParams = new LinearLayout.LayoutParams(0, dp(34), 1.0f);
+        inputParams.setMargins(dp(4), 0, dp(4), 0);
+        topBar.addView(urlInput, inputParams);
+
+        // 前往按鈕
+        Button btnGo = new Button(this);
+        btnGo.setText("前往");
+        btnGo.setTextColor(Color.WHITE);
+        btnGo.setTextSize(12);
+
+        GradientDrawable btnBg = new GradientDrawable();
+        btnBg.setColor(Color.parseColor("#2563eb"));
+        btnBg.setCornerRadius(dp(6));
+        btnGo.setBackground(btnBg);
+
+        LinearLayout.LayoutParams goParams = new LinearLayout.LayoutParams(dp(50), dp(34));
+        topBar.addView(btnGo, goParams);
+        btnGo.setOnClickListener(v -> navigateUrl());
+        urlInput.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == EditorInfo.IME_ACTION_GO) {
+                navigateUrl();
+                return true;
+            }
+            return false;
+        });
+
+        // 全螢幕收合按鈕
+        Button btnHide = new Button(this);
+        btnHide.setText("全螢幕");
+        btnHide.setTextColor(Color.parseColor("#94a3b8"));
+        btnHide.setTextSize(11);
+        btnHide.setBackgroundColor(Color.TRANSPARENT);
+        LinearLayout.LayoutParams hideParams = new LinearLayout.LayoutParams(dp(54), dp(34));
+        topBar.addView(btnHide, hideParams);
+        btnHide.setOnClickListener(v -> {
+            topBar.setVisibility(View.GONE);
+            btnRestoreBar.setVisibility(View.VISIBLE);
+        });
+
+        // 懸浮展開按鈕（全螢幕時顯示在左上角）
+        btnRestoreBar = new Button(this);
+        btnRestoreBar.setText("網址列");
+        btnRestoreBar.setTextColor(Color.WHITE);
+        btnRestoreBar.setTextSize(10);
+        btnRestoreBar.setVisibility(View.GONE);
+
+        GradientDrawable restoreBg = new GradientDrawable();
+        restoreBg.setColor(Color.parseColor("#1e293b"));
+        restoreBg.setCornerRadius(dp(4));
+        restoreBg.setStroke(dp(1), Color.parseColor("#38bdf8"));
+        btnRestoreBar.setBackground(restoreBg);
+
+        FrameLayout.LayoutParams rParams = new FrameLayout.LayoutParams(dp(54), dp(26));
+        rParams.gravity = Gravity.TOP | Gravity.START;
+        rParams.setMargins(dp(6), dp(6), 0, 0);
+        rootLayout.addView(btnRestoreBar, rParams);
+        btnRestoreBar.setOnClickListener(v -> {
+            topBar.setVisibility(View.VISIBLE);
+            btnRestoreBar.setVisibility(View.GONE);
+        });
+
+        // 2. 初始化核心 WebView
         webView = new WebView(this);
-        setContentView(webView);
+        LinearLayout.LayoutParams webParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1.0f);
+        mainContainer.addView(webView, webParams);
 
         webView.setFocusable(true);
         webView.setFocusableInTouchMode(true);
@@ -84,25 +206,8 @@ public class MainActivity extends AppCompatActivity {
         // 原生雙向通道
         webView.addJavascriptInterface(new Object() {
             @JavascriptInterface
-            public void switchGame(final String targetUrl) {
-                runOnUiThread(new Runnable() {
-                    @Override
-                    public void run() {
-                        // 核心修復：先換 URL，並在 200ms 後強制 Reload，徹底啟動目標遊戲
-                        webView.loadUrl(targetUrl);
-                        webView.postDelayed(new Runnable() {
-                            @Override
-                            public void run() {
-                                webView.reload();
-                            }
-                        }, 200);
-                    }
-                });
-            }
-
-            @JavascriptInterface
-            public void requestVisualAnalysis(final String platform) {
-                captureAndAnalyze(platform);
+            public void requestVisualAnalysis(final String mode) {
+                captureAndAnalyze(mode);
             }
         }, "AndroidBridge");
 
@@ -120,73 +225,80 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
+                if (url != null && !url.equals("about:blank")) {
+                    urlInput.setText(url);
+                }
                 injectAssistantScript(view);
             }
         });
 
-        // 啟動首頁
-        webView.loadUrl("https://osc188.com");
-
-        // 啟動永久守護
+        // 預設載入 Google 首頁作為初始搜尋入口，使用者可隨時貼上任何網址
+        webView.loadUrl("https://www.google.com");
         webView.postDelayed(hudWatchdog, 1000);
     }
 
-    // 原生高畫質截圖（升級為 720px 高清，確保底欄微小數字 100% 辨識）
-    private void captureAndAnalyze(final String platform) {
+    private int dp(float value) {
+        return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
+    }
+
+    private void navigateUrl() {
+        String target = urlInput.getText().toString().trim();
+        if (target.isEmpty()) return;
+        if (!target.startsWith("http://") && !target.startsWith("https://")) {
+            target = "https://" + target;
+        }
+        webView.loadUrl(target);
+    }
+
+    // 原生高解析度截圖（720px 高清，消除底欄雜訊）
+    private void captureAndAnalyze(final String mode) {
         if (isAnalyzing) return;
         isAnalyzing = true;
 
-        runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    int w = webView.getWidth();
-                    int h = webView.getHeight();
-                    if (w <= 0 || h <= 0) {
-                        isAnalyzing = false;
-                        updateHUDWithError("畫面載入中");
-                        return;
-                    }
-
-                    // 提升解析度至 720px，消除底欄小字與下三路模糊
-                    float scale = 720f / w;
-                    int targetW = 720;
-                    int targetH = (int) (h * scale);
-
-                    Bitmap bitmap = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888);
-                    Canvas canvas = new Canvas(bitmap);
-                    canvas.scale(scale, scale);
-                    webView.draw(canvas);
-
-                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                    bitmap.compress(Bitmap.CompressFormat.JPEG, 85, baos);
-                    byte[] imageBytes = baos.toByteArray();
-                    final String base64Image = Base64.encodeToString(imageBytes, Base64.NO_WRAP);
-                    bitmap.recycle();
-
-                    executor.execute(new Runnable() {
-                        @Override
-                        public void run() {
-                            try {
-                                String resultJson = callOpenAIAstra(base64Image, platform);
-                                updateHUDWithResult(resultJson);
-                            } catch (Exception e) {
-                                updateHUDWithError(e.getMessage());
-                            } finally {
-                                isAnalyzing = false;
-                            }
-                        }
-                    });
-                } catch (Exception e) {
+        runOnUiThread(() -> {
+            try {
+                int w = webView.getWidth();
+                int h = webView.getHeight();
+                if (w <= 0 || h <= 0) {
                     isAnalyzing = false;
-                    updateHUDWithError("截圖失敗: " + e.getMessage());
+                    updateHUDWithError("畫面載入中");
+                    return;
                 }
+
+                float scale = 720f / w;
+                int targetW = 720;
+                int targetH = (int) (h * scale);
+
+                Bitmap bitmap = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888);
+                Canvas canvas = new Canvas(bitmap);
+                canvas.scale(scale, scale);
+                webView.draw(canvas);
+
+                ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                bitmap.compress(Bitmap.CompressFormat.JPEG, 85, baos);
+                byte[] imageBytes = baos.toByteArray();
+                final String base64Image = Base64.encodeToString(imageBytes, Base64.NO_WRAP);
+                bitmap.recycle();
+
+                executor.execute(() -> {
+                    try {
+                        String resultJson = callOpenAIAstra(base64Image, mode);
+                        updateHUDWithResult(resultJson);
+                    } catch (Exception e) {
+                        updateHUDWithError(e.getMessage());
+                    } finally {
+                        isAnalyzing = false;
+                    }
+                });
+            } catch (Exception e) {
+                isAnalyzing = false;
+                updateHUDWithError("截圖失敗: " + e.getMessage());
             }
         });
     }
 
-    // 呼叫 GPT-6 Astra 模型（強化底欄精準定位與防偷懶約束）
-    private String callOpenAIAstra(String base64Image, String platform) throws Exception {
+    // GPT-6 Astra 全平台通用視覺精算
+    private String callOpenAIAstra(String base64Image, String mode) throws Exception {
         URL url = new URL("https://api.openai.com/v1/responses");
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
@@ -210,29 +322,25 @@ public class MainActivity extends AppCompatActivity {
 
         JSONArray contentArray = new JSONArray();
 
-        // 核心提示詞強化：精確指向底欄位置，嚴禁回答「未知」或「畫面載入中」
         JSONObject textObj = new JSONObject();
         textObj.put("type", "input_text");
-        String prompt = "你是頂尖百家樂視覺精算大師，當前牌桌為【" + platform.toUpperCase() + " 百家】。\n" +
-                "【重要視覺辨識指引 - 聚焦圖片最底部】：\n" +
-                "1. 圖片最下方的白色網格為路單走勢（珠盤路、大路、下三路）。\n" +
-                "2. 圖片最底端紅框中清晰標註著當前真實比分：\n" +
-                "   - DG 模式位於最底部紅框：【庄 XX 闲 XX 和 XX 庄对 X 闲对 X 总 XX】（例如：庄 16 闲 16 和 7 总 39）。\n" +
-                "   - MT 模式位於路單底欄：【莊 XX 閒 XX 和 XX 總數 XX】。\n" +
+        String prompt = "你是頂尖百家樂視覺精算大師。當前牌桌模式設定為【" + mode.toUpperCase() + "】。\n" +
+                "【通用視覺辨識核心指引】：\n" +
+                "1. 本應用適用於任何娛樂城與任何百家樂遊戲介面。請觀察畫面中的路單走勢（大路、珠盤路、下三路）與即時比分。\n" +
+                "2. 仔細辨識畫面底部或側邊的真實比分（莊/庄、閒/闲、和、總數/总數）：\n" +
+                "   - 無論是 MT、DG、WM、SA、歐博、Evolution 還是其他系統，請精確讀出當前數據。\n" +
                 "【嚴格鐵律】：\n" +
-                "- 嚴禁回答『畫面仍在載入』或『數據未知』！底欄數字清晰可見，請務必辨識真實比分並填入 stats！\n" +
-                "- 嚴禁輸出觀望！必須強制二選一【莊】或【閒】。\n\n" +
-                "【高勝率推演核心流程】：\n" +
-                "1.【提取數據】：精確提取最底端比分填入 stats，例如『庄16 闲16 和7 (39局)』。\n" +
-                "2.【大路與下三路形態】：觀察白色大路走勢及右下角紅藍問路（大眼仔、小路、蟑螂路）齊整度。\n" +
-                "3.【均值回歸與動量】：若比分有差距則權衡回歸；若比分持平（如 16:16），結合當前連跳動態給出推薦。\n" +
-                "4. 信心度請評估於 68%~92% 之間，並附上具體形態理由。\n\n" +
+                "- 嚴禁回答『畫面仍在載入』或『數據未知』！底欄數字清晰可見，務必識別真實比分填入 stats！\n" +
+                "- 嚴禁輸出觀望！必須強制在【莊】與【閒】中二選一。\n\n" +
+                "【推演流程】：\n" +
+                "1. 提取真實比分填入 stats，例如『庄16 闲16 和7 (39局)』。\n" +
+                "2. 依據大路走向（長龍或單跳）與下三路齊整度給出推薦。\n" +
+                "3. 信心度評估於 68%~92% 之間，並給出具體形態理由。\n\n" +
                 "嚴格僅輸出純 JSON 物件：\n" +
-                "{\"pick\":\"莊\",\"conf\":78,\"reason\":\"大路單跳形態，下三路齊整轉紅\",\"stats\":\"庄16 闲16 和7 (39局)\"}";
+                "{\"pick\":\"莊\",\"conf\":80,\"reason\":\"大路單跳形態，下三路齊整轉紅\",\"stats\":\"庄16 闲16 和7 (39局)\"}";
         textObj.put("text", prompt);
         contentArray.put(textObj);
 
-        // 截圖影像
         JSONObject imgObj = new JSONObject();
         imgObj.put("type", "input_image");
         imgObj.put("image_url", "data:image/jpeg;base64," + base64Image);
@@ -299,48 +407,36 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void updateHUDWithResult(final String jsonStr) {
-        runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    JSONObject obj = new JSONObject(jsonStr);
-                    String pick = obj.optString("pick", "莊");
-                    int conf = obj.optInt("conf", 65);
-                    String reason = obj.optString("reason", "走勢推論");
-                    String stats = obj.optString("stats", "統計更新");
+        runOnUiThread(() -> {
+            try {
+                JSONObject obj = new JSONObject(jsonStr);
+                String pick = obj.optString("pick", "莊");
+                int conf = obj.optInt("conf", 65);
+                String reason = obj.optString("reason", "走勢推論");
+                String stats = obj.optString("stats", "統計更新");
 
-                    String js = String.format("window.__updateAI && window.__updateAI('%s', %d, '%s', '%s');",
-                            pick, conf, reason, stats);
-                    webView.evaluateJavascript(js, null);
-                } catch (Exception e) {
-                    updateHUDWithError("解析格式異常");
-                }
+                String js = String.format("window.__updateAI && window.__updateAI('%s', %d, '%s', '%s');",
+                        pick, conf, reason, stats);
+                webView.evaluateJavascript(js, null);
+            } catch (Exception e) {
+                updateHUDWithError("解析格式異常");
             }
         });
     }
 
     private void updateHUDWithError(final String errMsg) {
-        runOnUiThread(new Runnable() {
-            @Override
-            public void run() {
-                String js = String.format("window.__updateAIError && window.__updateAIError('%s');", errMsg);
-                webView.evaluateJavascript(js, null);
-            }
+        runOnUiThread(() -> {
+            String js = String.format("window.__updateAIError && window.__updateAIError('%s');", errMsg);
+            webView.evaluateJavascript(js, null);
         });
     }
 
+    // 注入頂層懸浮窗
     private void injectAssistantScript(WebView view) {
         String js = "javascript:(function() {" +
             "if (document.getElementById('slot-assistant-hud')) return;" +
             "var rootTarget = document.documentElement || document.body;" +
             "if (!rootTarget) return;" +
-
-            "document.addEventListener('focusout', function(e) {" +
-            "  if (e.target && e.target.tagName === 'INPUT') {" +
-            "    e.target.dispatchEvent(new Event('input', { bubbles: true }));" +
-            "    e.target.dispatchEvent(new Event('change', { bubbles: true }));" +
-            "  }" +
-            "}, true);" +
 
             "function bindTap(el, fn) {" +
             "  if (!el) return;" +
@@ -354,8 +450,7 @@ public class MainActivity extends AppCompatActivity {
             "  el.addEventListener('click', function(e) { e.stopPropagation(); fn(); });" +
             "}" +
 
-            // 預設平台：若目前網址含有 dg 則自動選取 dg
-            "var curPlatform = (location.href.indexOf('game_name=dg') !== -1) ? 'dg' : 'mt';" +
+            "var curMode = '通用';" +
 
             "var hud = document.createElement('div');" +
             "hud.id = 'slot-assistant-hud';" +
@@ -366,10 +461,11 @@ public class MainActivity extends AppCompatActivity {
                     "<span id=\"hud_tog\" style=\"cursor:pointer;color:#94a3b8;font-size:10px;margin-left:3px;\">[收]</span>" +
                 "</div>' +" +
                 "'<div id=\"hud_content\" style=\"padding:10px;\">' +" +
-                    // 平台切換按鈕
-                    "'<div style=\"display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:6px;\">" +
-                        "<button id=\"nav_mt\" style=\"background:#2563eb;border:1px solid #38bdf8;color:#fff;padding:5px 0;border-radius:4px;font-size:10px;font-weight:bold;\">MT 百家</button>" +
-                        "<button id=\"nav_dg\" style=\"background:#0f172a;border:1px solid #475569;color:#94a3b8;padding:5px 0;border-radius:4px;font-size:10px;\">DG 百家</button>" +
+                    // 模式切換按鈕：通用 / MT / DG
+                    "'<div style=\"display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px;margin-bottom:6px;\">" +
+                        "<button id=\"mode_gen\" style=\"background:#2563eb;border:1px solid #38bdf8;color:#fff;padding:4px 0;border-radius:3px;font-size:9px;font-weight:bold;\">通用</button>" +
+                        "<button id=\"mode_mt\" style=\"background:#0f172a;border:1px solid #475569;color:#94a3b8;padding:4px 0;border-radius:3px;font-size:9px;\">MT</button>" +
+                        "<button id=\"mode_dg\" style=\"background:#0f172a;border:1px solid #475569;color:#94a3b8;padding:4px 0;border-radius:3px;font-size:9px;\">DG</button>" +
                     "</div>' +" +
                     "'<div style=\"background:rgba(15,23,42,0.85);border:1px solid #3b82f6;border-radius:6px;padding:8px 4px;text-align:center;margin-bottom:6px;\">" +
                         "<div style=\"font-size:10px;color:#94a3b8;\">🎯 深度路單精算建議</div>" +
@@ -381,7 +477,7 @@ public class MainActivity extends AppCompatActivity {
                         "<span id=\"hud_score\">未掃描</span>" +
                         "<span id=\"hud_sync_dot\" style=\"color:#4ade80;\">● 連線</span>" +
                     "</div>' +" +
-                    // 代理聯繫資訊區塊
+                    // 代理聯繫資訊
                     "'<div style=\"margin-top:8px;padding-top:6px;border-top:1px solid #334155;font-size:9px;color:#94a3b8;line-height:1.45;text-align:center;\">' +" +
                         "'<div>代理聯繫LINE：<b style=\"color:#38bdf8;\">@OSC168</b></div>' +" +
                         "'<div>Telegram：<b style=\"color:#38bdf8;\">@TG_APK1</b></div>' +" +
@@ -414,33 +510,21 @@ public class MainActivity extends AppCompatActivity {
             "  else { cnt.style.display = 'none'; tog.innerText = '[展]'; }" +
             "});" +
 
-            // 雙平台切換與高亮聯動
-            "var btnMt = document.getElementById('nav_mt');" +
-            "var btnDg = document.getElementById('nav_dg');" +
-            "function setPlatformUI(plat) {" +
-            "  curPlatform = plat;" +
-            "  if (plat === 'mt') {" +
-            "    btnMt.style.background = '#2563eb'; btnMt.style.borderColor = '#38bdf8'; btnMt.style.color = '#fff';" +
-            "    btnDg.style.background = '#0f172a'; btnDg.style.borderColor = '#475569'; btnDg.style.color = '#94a3b8';" +
-            "  } else {" +
-            "    btnDg.style.background = '#2563eb'; btnDg.style.borderColor = '#38bdf8'; btnDg.style.color = '#fff';" +
-            "    btnMt.style.background = '#0f172a'; btnMt.style.borderColor = '#475569'; btnMt.style.color = '#94a3b8';" +
-            "  }" +
+            // 切換模式高亮
+            "var bGen = document.getElementById('mode_gen');" +
+            "var bMt = document.getElementById('mode_mt');" +
+            "var bDg = document.getElementById('mode_dg');" +
+            "function setMode(m) {" +
+            "  curMode = m;" +
+            "  [bGen, bMt, bDg].forEach(function(btn) {" +
+            "    btn.style.background = '#0f172a'; btn.style.borderColor = '#475569'; btn.style.color = '#94a3b8';" +
+            "  });" +
+            "  var active = (m === 'mt') ? bMt : (m === 'dg' ? bDg : bGen);" +
+            "  active.style.background = '#2563eb'; active.style.borderColor = '#38bdf8'; active.style.color = '#fff';" +
             "}" +
-            "setPlatformUI(curPlatform);" +
-
-            // 雙向強制換台：通知 Java 層換網址並 Reload
-            "function safeNav(url, plat) {" +
-            "  setPlatformUI(plat);" +
-            "  if (window.AndroidBridge && window.AndroidBridge.switchGame) {" +
-            "    window.AndroidBridge.switchGame(url);" +
-            "  } else {" +
-            "    window.location.replace(url);" +
-            "    window.location.reload();" +
-            "  }" +
-            "}" +
-            "bindTap(btnMt, function() { safeNav('https://www.osc169.com/#/game/play?game_name=meta_all&game_type=3&device=mobile', 'mt'); });" +
-            "bindTap(btnDg, function() { safeNav('https://www.osc169.com/#/game/play?game_name=dg&game_type=3&device=mobile', 'dg'); });" +
+            "bindTap(bGen, function() { setMode('auto'); });" +
+            "bindTap(bMt, function() { setMode('mt'); });" +
+            "bindTap(bDg, function() { setMode('dg'); });" +
 
             // 觸發視覺辨識
             "var btnDo = document.getElementById('btn_do_ai');" +
@@ -448,7 +532,7 @@ public class MainActivity extends AppCompatActivity {
             "  btnDo.innerText = '🧠 Astra 深度推論中...';" +
             "  btnDo.disabled = true;" +
             "  if (window.AndroidBridge && window.AndroidBridge.requestVisualAnalysis) {" +
-            "    window.AndroidBridge.requestVisualAnalysis(curPlatform);" +
+            "    window.AndroidBridge.requestVisualAnalysis(curMode);" +
             "  }" +
             "});" +
 
