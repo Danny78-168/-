@@ -107,7 +107,7 @@ public class MainActivity extends AppCompatActivity {
         webView.loadUrl("https://www.osc169.com/#/game/play?game_name=meta_all&game_type=3&device=mobile");
     }
 
-    // 核心突破：原生畫布截圖，無視 Canvas / iframe 阻擋，直接由視覺大模型識別
+    // 原生畫布截圖
     private void captureAndAnalyze(final String engine) {
         if (isAnalyzing) return;
         isAnalyzing = true;
@@ -124,7 +124,7 @@ public class MainActivity extends AppCompatActivity {
                         return;
                     }
 
-                    // 等比例縮小截圖（寬度 540px），體積僅約 60KB，傳輸極速
+                    // 等比縮放寬度至 540px，兼顧辨識精準度與傳輸速度
                     float scale = 540f / w;
                     int targetW = 540;
                     int targetH = (int) (h * scale);
@@ -152,7 +152,7 @@ public class MainActivity extends AppCompatActivity {
                                 }
                                 updateHUDWithResult(resultJson);
                             } catch (Exception e) {
-                                updateHUDWithError("視覺分析失敗: " + e.getMessage());
+                                updateHUDWithError(e.getMessage());
                             } finally {
                                 isAnalyzing = false;
                             }
@@ -166,7 +166,7 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    // GPT-4o 多模態視覺推理
+    // GPT-4o 視覺推理（強制 JSON 模式，修復解析格式異常）
     private String callOpenAIVision(String base64Image) throws Exception {
         URL url = new URL("https://api.openai.com/v1/chat/completions");
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -181,20 +181,24 @@ public class MainActivity extends AppCompatActivity {
         jsonBody.put("model", "gpt-4o");
         jsonBody.put("temperature", 0.2);
 
+        // 強制要求 OpenAI 僅回傳合法 JSON 物件
+        JSONObject respFormat = new JSONObject();
+        respFormat.put("type", "json_object");
+        jsonBody.put("response_format", respFormat);
+
         JSONArray messages = new JSONArray();
+        JSONObject sysMsg = new JSONObject();
+        sysMsg.put("role", "system");
+        sysMsg.put("content", "你是頂尖百家樂路單視覺精算師。請觀察截圖底部的比分數據與大路走勢，分析下一手下注目標。嚴格僅輸出 JSON 物件，格式為: {\"pick\":\"莊\",\"conf\":78,\"reason\":\"動量延續\",\"stats\":\"莊23 閒24 和3 (50局)\"}");
+        messages.put(sysMsg);
+
         JSONObject userMsg = new JSONObject();
         userMsg.put("role", "user");
 
         JSONArray contents = new JSONArray();
-
         JSONObject textObj = new JSONObject();
         textObj.put("type", "text");
-        textObj.put("text", "你是頂尖百家樂路單視覺精算師。請觀察這張手機截圖：\n" +
-                "1. 仔細辨識畫面底部的比分數據（例如：莊XX、閒XX、和XX、總數XX）。\n" +
-                "2. 觀察紅藍珠盤路與大路走向。\n" +
-                "3. 推薦下一手最佳目標【莊】或【閒】。\n" +
-                "請嚴格僅輸出純 JSON 格式，不要加 Markdown 或其他字詞：\n" +
-                "{\"pick\":\"莊\",\"conf\":78,\"reason\":\"大路走單跳，跟莊動量\",\"stats\":\"莊16 閒14 和3 (33局)\"}");
+        textObj.put("text", "請識別圖片底部的百家樂路單比分，並給出下一手預測 JSON。");
         contents.put(textObj);
 
         JSONObject imgObj = new JSONObject();
@@ -231,9 +235,9 @@ public class MainActivity extends AppCompatActivity {
         return cleanJson(out);
     }
 
-    // Gemini 2.0 Flash 多模態視覺推理
+    // Gemini 視覺推理（修正為 gemini-1.5-flash，解決 HTTP 404）
     private String callGeminiVision(String base64Image) throws Exception {
-        String endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=" + getGeminiKey();
+        String endpoint = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=" + getGeminiKey();
         URL url = new URL(endpoint);
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
         conn.setRequestMethod("POST");
@@ -248,8 +252,7 @@ public class MainActivity extends AppCompatActivity {
         JSONArray parts = new JSONArray();
 
         JSONObject textPart = new JSONObject();
-        textPart.put("text", "你是頂尖百家樂視覺精算師。請觀察這張截圖底部路單，提取莊、閒、和、總局數，並推薦下一手【莊】或【閒】。嚴格僅輸出純JSON：\n" +
-                "{\"pick\":\"莊\",\"conf\":75,\"reason\":\"動量延續\",\"stats\":\"莊16 閒14 和3 (33局)\"}");
+        textPart.put("text", "你是頂尖百家樂視覺精算師。請觀察截圖底部路單，提取莊、閒、和比分與總局數，並推薦下一手【莊】或【閒】。嚴格僅輸出純 JSON 物件：{\"pick\":\"莊\",\"conf\":75,\"reason\":\"動量延續\",\"stats\":\"莊23 閒24 和3 (50局)\"}");
         parts.put(textPart);
 
         JSONObject imgPart = new JSONObject();
@@ -288,12 +291,16 @@ public class MainActivity extends AppCompatActivity {
         return cleanJson(out);
     }
 
+    // 核心強化：精準擷取從第一個 { 到最後一個 } 之間的 JSON 字串
     private String cleanJson(String text) {
+        if (text == null) return "{}";
         text = text.trim();
-        if (text.startsWith("```json")) text = text.substring(7);
-        if (text.startsWith("```")) text = text.substring(3);
-        if (text.endsWith("```")) text = text.substring(0, text.length() - 3);
-        return text.trim();
+        int start = text.indexOf('{');
+        int end = text.lastIndexOf('}');
+        if (start != -1 && end > start) {
+            return text.substring(start, end + 1).trim();
+        }
+        return text;
     }
 
     private void updateHUDWithResult(final String jsonStr) {
@@ -373,7 +380,7 @@ public class MainActivity extends AppCompatActivity {
                         "</div>' +" +
                         "'<button id=\"btn_do_ai\" style=\"width:100%;background:#2563eb;color:#fff;border:none;padding:7px 0;border-radius:4px;font-weight:bold;margin-bottom:6px;font-size:11px;\">📸 截圖畫面並由 AI 辨識</button>' +" +
                         "'<div style=\"display:flex;justify-content:space-between;font-size:10px;color:#94a3b8;\">" +
-                            "<span id=\"hud_score\">未掃描</span>" +
+                            "<span id=\"hud_score\">莊0 閒0 和0 (0局)</span>" +
                             "<span id=\"hud_sync_dot\" style=\"color:#4ade80;\">● 連線</span>" +
                         "</div>' +" +
                     "'</div>' +" +
@@ -447,11 +454,11 @@ public class MainActivity extends AppCompatActivity {
             "  if (window.AndroidBridge && window.AndroidBridge.switchGame) window.AndroidBridge.switchGame(url);" +
             "  else location.href = url;" +
             "}" +
-            "bindTap(document.getElementById('nav_mt'), function() { safeNav('[https://www.osc169.com/#/game/play?game_name=meta_all&game_type=3&device=mobile](https://www.osc169.com/#/game/play?game_name=meta_all&game_type=3&device=mobile)'); });" +
-            "bindTap(document.getElementById('nav_dg'), function() { safeNav('[https://www.osc169.com/#/game/play?game_name=dg&game_type=3&device=mobile](https://www.osc169.com/#/game/play?game_name=dg&game_type=3&device=mobile)'); });" +
-            "bindTap(document.getElementById('nav_atg'), function() { curSlot = 'atg'; renderSlotButtons(); updateSlotCalc(); safeNav('[https://www.osc169.com/#/game/play?game_name=atg&productId=tiger-princess&device=mobile](https://www.osc169.com/#/game/play?game_name=atg&productId=tiger-princess&device=mobile)'); });" +
-            "bindTap(document.getElementById('nav_rsg'), function() { curSlot = 'rsg'; renderSlotButtons(); updateSlotCalc(); safeNav('[https://www.osc169.com/#/game/play?game_name=rsg&productId=129&device=mobile](https://www.osc169.com/#/game/play?game_name=rsg&productId=129&device=mobile)'); });" +
-            "bindTap(document.getElementById('nav_ava'), function() { curSlot = 'ava'; renderSlotButtons(); updateSlotCalc(); safeNav('[https://www.osc169.com/#/game/play?game_name=avatar&productId=140083&device=mobile](https://www.osc169.com/#/game/play?game_name=avatar&productId=140083&device=mobile)'); });" +
+            "bindTap(document.getElementById('nav_mt'), function() { safeNav('https://www.osc169.com/#/game/play?game_name=meta_all&game_type=3&device=mobile'); });" +
+            "bindTap(document.getElementById('nav_dg'), function() { safeNav('https://www.osc169.com/#/game/play?game_name=dg&game_type=3&device=mobile'); });" +
+            "bindTap(document.getElementById('nav_atg'), function() { curSlot = 'atg'; renderSlotButtons(); updateSlotCalc(); safeNav('https://www.osc169.com/#/game/play?game_name=atg&productId=tiger-princess&device=mobile'); });" +
+            "bindTap(document.getElementById('nav_rsg'), function() { curSlot = 'rsg'; renderSlotButtons(); updateSlotCalc(); safeNav('https://www.osc169.com/#/game/play?game_name=rsg&productId=129&device=mobile'); });" +
+            "bindTap(document.getElementById('nav_ava'), function() { curSlot = 'ava'; renderSlotButtons(); updateSlotCalc(); safeNav('https://www.osc169.com/#/game/play?game_name=avatar&productId=140083&device=mobile'); });" +
 
             // 老虎機計算機
             "var slotConfigs = {" +
@@ -493,7 +500,7 @@ public class MainActivity extends AppCompatActivity {
             "renderSlotButtons();" +
             "updateSlotCalc();" +
 
-            // 切換視覺引擎
+            // 切換視覺引擎（GPT-4o 視覺 / Gemini 視覺）
             "var curEngine = 'openai';" +
             "var btnEng = document.getElementById('btn_engine');" +
             "var btnDo = document.getElementById('btn_do_ai');" +
@@ -513,6 +520,37 @@ public class MainActivity extends AppCompatActivity {
             "  }" +
             "});" +
 
+            // 背景自動感應底欄更新路單
+            "var lastTot = -1;" +
+            "function scanLocalData() {" +
+            "  try {" +
+            "    var raw = document.body ? (document.body.innerText || '') : '';" +
+            "    try {" +
+            "      var ifrs = document.querySelectorAll('iframe');" +
+            "      for (var k = 0; k < ifrs.length; k++) {" +
+            "        var d = ifrs[k].contentDocument || ifrs[k].contentWindow.document;" +
+            "        if (d && d.body) raw += ' ' + d.body.innerText;" +
+            "      }" +
+            "    } catch(e) {}" +
+            "    if (!raw) return;" +
+            "    var r = /(?:莊|庄)\\s*(\\d{1,3})[\\s\\S]{1,40}?(?:閒|闲)\\s*(\\d{1,3})[\\s\\S]{1,40}?(?:和)\\s*(\\d{1,3})[\\s\\S]{1,60}?(?:總數|总数|局數|局数)\\s*(\\d{1,3})/g;" +
+            "    var m;" +
+            "    while ((m = r.exec(raw)) !== null) {" +
+            "      var b = parseInt(m[1], 10), p = parseInt(m[2], 10), t = parseInt(m[3], 10), tot = parseInt(m[4], 10);" +
+            "      if (tot > 0 && Math.abs((b + p + t) - tot) <= 2) {" +
+            "        if (tot !== lastTot) {" +
+            "          lastTot = tot;" +
+            "          var sElem = document.getElementById('hud_score');" +
+            "          if (sElem) sElem.innerText = '莊' + b + ' 閒' + p + ' 和' + t + ' (' + tot + '局)';" +
+            "        }" +
+            "        break;" +
+            "      }" +
+            "    }" +
+            "  } catch(e) {}" +
+            "}" +
+            "setInterval(scanLocalData, 600);" +
+            "scanLocalData();" +
+
             // 回調更新介面
             "window.__updateAI = function(pick, conf, reason, stats) {" +
             "  var t = document.getElementById('ai_pick_target');" +
@@ -526,8 +564,9 @@ public class MainActivity extends AppCompatActivity {
 
             "window.__updateAIError = function(msg) {" +
             "  var d = document.getElementById('ai_pick_desc');" +
-            "  if (d) d.innerText = msg;" +
-            "  btnDo.innerText = '重試'; btnDo.disabled = false;" +
+            "  if (d) d.innerText = '辨識重試: ' + msg;" +
+            "  btnDo.innerText = '重試';" +
+            "  btnDo.disabled = false;" +
             "};" +
         "})();";
 
