@@ -5,7 +5,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
     private var webView: WKWebView!
     private var isAnalyzing = false
 
-    // 頂部通用導航網址列
     private let topBar = UIView()
     private let urlTextField = UITextField()
     private let goButton = UIButton(type: .system)
@@ -14,7 +13,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
     private var topBarHeightConstraint: NSLayoutConstraint?
     private var isBarHidden = false
 
-    // 🔑 拆分字串內建 OpenAI 金鑰
     private let OPENAI_KEY_PART1 = "sk-proj-dwQyYlJrpRoJqtP9ZCcPjQzDUtQXJi1MT1sd6OfsMdW7RF"
     private let OPENAI_KEY_PART2 = "OIOwKJ1JSgi2Satw9WoTaiC8WHPxT3BlbkFJhhCPi2LwrFZ3k7mbJ_LSvLLm65LHzcjTbnqkvKEyKsBgbRlmJzX8X0pGNyrvgH-vPN9sAcwiwA"
 
@@ -59,7 +57,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
         topBar.backgroundColor = UIColor(red: 15/255, green: 23/255, blue: 42/255, alpha: 0.95)
         view.addSubview(topBar)
 
-        // 上一頁按鈕
         backButton.setTitle("◀", for: .normal)
         backButton.setTitleColor(.white, for: .normal)
         backButton.titleLabel?.font = .systemFont(ofSize: 14, weight: .bold)
@@ -67,7 +64,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
         backButton.addTarget(self, action: #selector(handleBack), for: .touchUpInside)
         topBar.addSubview(backButton)
 
-        // 網址輸入框（支援貼上任何連結）
         urlTextField.translatesAutoresizingMaskIntoConstraints = false
         urlTextField.backgroundColor = UIColor(red: 30/255, green: 41/255, blue: 59/255, alpha: 1)
         urlTextField.textColor = UIColor(red: 56/255, green: 189/255, blue: 248/255, alpha: 1)
@@ -85,7 +81,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
         urlTextField.delegate = self
         topBar.addSubview(urlTextField)
 
-        // 前往按鈕
         goButton.setTitle("前往", for: .normal)
         goButton.backgroundColor = UIColor(red: 37/255, green: 99/255, blue: 235/255, alpha: 1)
         goButton.setTitleColor(.white, for: .normal)
@@ -95,7 +90,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
         goButton.addTarget(self, action: #selector(handleGo), for: .touchUpInside)
         topBar.addSubview(goButton)
 
-        // 懸浮迷你開關（隱藏/展開網址列）
         toggleBarButton.setTitle("網址列", for: .normal)
         toggleBarButton.setTitleColor(.white, for: .normal)
         toggleBarButton.titleLabel?.font = .systemFont(ofSize: 10, weight: .bold)
@@ -177,7 +171,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
         }
     }
 
-    // 720px 高畫質原生畫布截圖
     private func captureAndAnalyze(platform: String) {
         guard !isAnalyzing else { return }
         isAnalyzing = true
@@ -211,7 +204,6 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
         }
     }
 
-    // 通用 GPT-6 Astra 視覺精算
     private func callOpenAIAstra(base64Image: String, platform: String) {
         guard let url = URL(string: "https://api.openai.com/v1/responses") else { return }
 
@@ -296,7 +288,7 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
             let stats = obj["stats"] as? String ?? "統計更新"
 
             let js = "window.__updateAI && window.__updateAI('\(pick)', \(conf), '\(reason)', '\(stats)');"
-            self?.webView.evaluateJavascript(js, completionHandler: nil)
+            self?.webView.evaluateJavaScript(js, completionHandler: nil)
         }
     }
 
@@ -351,8 +343,8 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
                     '</div>' +
                     '<div style="background:rgba(15,23,42,0.85);border:1px solid #3b82f6;border-radius:6px;padding:8px 4px;text-align:center;margin-bottom:6px;">' +
                         '<div style="font-size:10px;color:#94a3b8;">🎯 深度路單精算建議</div>' +
-                        '<div id=\"ai_pick_target\" style="font-size:18px;font-weight:900;color:#ef4444;margin:2px 0;">待命中</div>' +
-                        '<div id=\"ai_pick_desc\" style="font-size:10px;color:#38bdf8;">點擊下方進行大路與下三路分析</div>' +
+                        '<div id="ai_pick_target" style="font-size:18px;font-weight:900;color:#ef4444;margin:2px 0;">待命中</div>' +
+                        '<div id="ai_pick_desc" style="font-size:10px;color:#38bdf8;">點擊下方進行大路與下三路分析</div>' +
                     '</div>' +
                     '<button id="btn_do_ai" style="width:100%;background:#2563eb;color:#fff;border:none;padding:8px 0;border-radius:4px;font-weight:bold;margin-bottom:6px;font-size:11px;">📸 截圖畫面並由 AI 辨識</button>' +
                     '<div style="display:flex;justify-content:space-between;font-size:10px;color:#94a3b8;">' +
@@ -406,4 +398,35 @@ class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHan
 
             var btnDo = document.getElementById('btn_do_ai');
             bindTap(btnDo, function() {
-        
+                btnDo.innerText = '🧠 Astra 深度推論中...';
+                btnDo.disabled = true;
+                if (window.AndroidBridge && window.AndroidBridge.requestVisualAnalysis) {
+                      window.AndroidBridge.requestVisualAnalysis(curMode);
+                }
+            });
+
+            window.__updateAI = function(pick, conf, reason, stats) {
+                var t = document.getElementById('ai_pick_target');
+                var d = document.getElementById('ai_pick_desc');
+                var s = document.getElementById('hud_score');
+                if (t) {
+                    t.innerText = '【' + pick + '】 ' + conf + '%';
+                    t.style.color = (pick === '莊' || pick === '庄') ? '#ef4444' : '#3b82f6';
+                }
+                if (d) d.innerText = reason;
+                if (s) s.innerText = stats;
+                btnDo.innerText = '📸 截圖畫面並由 AI 辨識';
+                btnDo.disabled = false;
+            };
+
+            window.__updateAIError = function(msg) {
+                var d = document.getElementById('ai_pick_desc');
+                if (d) d.innerText = '辨識重試: ' + msg;
+                btnDo.innerText = '重試';
+                btnDo.disabled = false;
+            };
+        })();
+        """
+        webView.evaluateJavaScript(js, completionHandler: nil)
+    }
+}
