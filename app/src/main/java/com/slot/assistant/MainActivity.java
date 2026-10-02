@@ -35,7 +35,7 @@ public class MainActivity extends AppCompatActivity {
         settings.setLoadWithOverviewMode(true);
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setJavaScriptCanOpenWindowsAutomatically(true);
-        settings.setSaveFormData(false); // 關閉表單記憶，防止其他使用者看到歷史帳號
+        settings.setSaveFormData(false); // 關閉表單記憶保護個人隱私
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
@@ -49,7 +49,7 @@ public class MainActivity extends AppCompatActivity {
 
         settings.setUserAgentString("Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36");
 
-        // 原生切台通道，解決 DG 與各遊戲轉址無效問題
+        // 原生切台通道
         webView.addJavascriptInterface(new Object() {
             @JavascriptInterface
             public void switchGame(final String url) {
@@ -77,7 +77,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void injectAssistantScript(WebView view) {
         String js = "javascript:(function() {" +
-            // ================= 1. 表單自動同步器 (防止登入按鈕未響應) =================
+            // ================= 1. 表單自動同步器 (防止登入卡住) =================
             "function syncInputs() {" +
             "  var pwd = document.querySelector('input[type=\"password\"]');" +
             "  if (!pwd || pwd.offsetParent === null) return;" +
@@ -89,7 +89,7 @@ public class MainActivity extends AppCompatActivity {
             "    }" +
             "  });" +
             "}" +
-            "setInterval(syncInputs, 500);" +
+            "setInterval(syncInputs, 400);" +
 
             "if (!window._loginBound) {" +
             "  window._loginBound = true;" +
@@ -157,7 +157,7 @@ public class MainActivity extends AppCompatActivity {
                 "'</div>';" +
             "document.body.appendChild(hud);" +
 
-            // 收合功能
+            // 收合與展開
             "var tog = document.getElementById('hud_tog');" +
             "var cnt = document.getElementById('hud_content');" +
             "tog.onclick = function(e) {" +
@@ -201,7 +201,7 @@ public class MainActivity extends AppCompatActivity {
             "tB.onclick = function() { setTab('bac'); };" +
             "tS.onclick = function() { setTab('slt'); };" +
 
-            // 換台調度
+            // 換台導航
             "function navTo(url) {" +
             "  if (window.AndroidBridge && window.AndroidBridge.switchGame) {" +
             "    window.AndroidBridge.switchGame(url);" +
@@ -215,7 +215,6 @@ public class MainActivity extends AppCompatActivity {
             "document.getElementById('nav_rsg').onclick = function() { navTo('https://www.osc169.com/#/game/play?game_name=rsg&productId=129&device=mobile'); };" +
             "document.getElementById('nav_ava').onclick = function() { navTo('https://www.osc169.com/#/game/play?game_name=avatar&productId=140083&device=mobile'); };" +
 
-            // 判斷目前遊戲並自動選取分頁
             "var isSlot = location.href.indexOf('tiger-princess') !== -1 || location.href.indexOf('productId=129') !== -1 || location.href.indexOf('avatar') !== -1;" +
             "if (isSlot) setTab('slt'); else setTab('bac');" +
 
@@ -264,36 +263,62 @@ public class MainActivity extends AppCompatActivity {
             "renderSlotButtons();" +
             "updateSlotCalc();" +
 
-            // ================= 4. 百家樂 DOM 數據讀取與 AI 決策 =================
+            // ================= 4. 百家樂精準路單抓取與 AI 決策 =================
+            "var lastB = -1, lastP = -1, lastT = -1, lastTot = -1;" +
+
             "function scanGameData() {" +
             "  try {" +
             "    var pwd = document.querySelector('input[type=\"password\"]');" +
-            "    if (pwd && pwd.offsetParent !== null) return;" + // 僅在登入視窗可見時暫停
+            "    if (pwd && pwd.offsetParent !== null) return;" +
 
             "    var txt = document.body ? (document.body.innerText || '') : '';" +
-            "    var mb = txt.match(/(?:莊|庄)\\s*[:：]?\\s*(\\d+)/);" +
-            "    var mp = txt.match(/(?:閒|闲)\\s*[:：]?\\s*(\\d+)/);" +
-            "    var mt = txt.match(/(?:和)\\s*[:：]?\\s*(\\d+)/);" +
-            "    var mtot = txt.match(/(?:總數|总数|總局|总局)\\s*[:：]?\\s*(\\d+)/);" +
+            "    if (!txt) return;" +
 
-            "    if (mb && mp) {" +
-            "      var b = parseInt(mb[1], 10), p = parseInt(mp[1], 10);" +
-            "      var t = mt ? parseInt(mt[1], 10) : 0;" +
-            "      var tot = mtot ? parseInt(mtot[1], 10) : (b + p + t);" +
+            "    var b = -1, p = -1, t = 0, tot = -1;" +
 
+            // 優先模式 1：當桌牌桌內部統計列（莊 22 閒 15 和 2 ... 總數 39）
+            "    var mTable = txt.match(/(?:莊|庄)\\s*(\\d+)\\s+(?:閒|闲)\\s*(\\d+)\\s+(?:和)\\s*(\\d+)[^\\n\\r]*?(?:總數|总数|總局|总局|局數|局数)\\s*(\\d+)/);" +
+            "    if (mTable) {" +
+            "      b = parseInt(mTable[1], 10);" +
+            "      p = parseInt(mTable[2], 10);" +
+            "      t = parseInt(mTable[3], 10);" +
+            "      tot = parseInt(mTable[4], 10);" +
+            "    } else {" +
+            // 模式 2：大廳桌台卡片統計列（局數 45 莊 30 閒 14 和 1）
+            "      var mLobby = txt.match(/(?:局數|局数|總數|总数)\\s*(\\d+)\\s+(?:莊|庄)\\s*(\\d+)\\s+(?:閒|闲)\\s*(\\d+)\\s+(?:和)\\s*(\\d+)/);" +
+            "      if (mLobby) {" +
+            "        tot = parseInt(mLobby[1], 10);" +
+            "        b = parseInt(mLobby[2], 10);" +
+            "        p = parseInt(mLobby[3], 10);" +
+            "        t = parseInt(mLobby[4], 10);" +
+            "      } else {" +
+            // 模式 3：標準三連統計保底（排除帶有冒號或小數點的賠率）
+            "        var mFall = txt.match(/(?:^|[^\\w])(?:莊|庄)\\s*(\\d{1,3})(?!\\s*[:\\.])\\s+(?:閒|闲)\\s*(\\d{1,3})(?!\\s*[:\\.])\\s+(?:和)\\s*(\\d{1,3})(?!\\s*[:\\.])/);" +
+            "        if (mFall) {" +
+            "          b = parseInt(mFall[1], 10);" +
+            "          p = parseInt(mFall[2], 10);" +
+            "          t = parseInt(mFall[3], 10);" +
+            "          tot = b + p + t;" +
+            "        }" +
+            "      }" +
+            "    }" +
+
+            "    if (b !== -1 && p !== -1 && (b !== lastB || p !== lastP || t !== lastT || tot !== lastTot)) {" +
+            "      lastB = b; lastP = p; lastT = t; lastTot = tot;" +
             "      var delta = p - b;" +
             "      var pick = '莊', conf = 60, reason = '';" +
 
+            // AI 雙模算法 (大數均值對沖 vs 動量平衡)
             "      if (delta >= 3) {" +
             "        pick = '莊'; conf = Math.min(88, 62 + delta * 4);" +
-            "        reason = '閒偏離 ' + delta + ' 局 (均值修正)';" +
+            "        reason = '閒領先 ' + delta + ' 局 (均值修正)';" +
             "      } else if (delta <= -3) {" +
             "        pick = '閒'; conf = Math.min(88, 62 + Math.abs(delta) * 4);" +
-            "        reason = '莊偏離 ' + Math.abs(delta) + ' 局 (均值修正)';" +
+            "        reason = '莊領先 ' + Math.abs(delta) + ' 局 (均值修正)';" +
             "      } else {" +
             "        pick = (b >= p) ? '莊' : '閒';" +
             "        conf = 58 + (tot % 6);" +
-            "        reason = '動量趨勢推薦';" +
+            "        reason = '趨勢平衡推薦';" +
             "      }" +
 
             "      var tElem = document.getElementById('ai_pick_target');" +
@@ -308,7 +333,9 @@ public class MainActivity extends AppCompatActivity {
             "    }" +
             "  } catch(e) {}" +
             "}" +
-            "setInterval(scanGameData, 1000);" +
+
+            "setInterval(scanGameData, 600);" +
+            "scanGameData();" +
             "})();";
         view.evaluateJavascript(js, null);
     }
