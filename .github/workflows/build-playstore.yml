@@ -44,7 +44,7 @@ jobs:
             -keypass AstraSecurePass2026 \
             -dname "CN=AstraStudio, OU=Engineering, O=Astra, L=Taipei, ST=Taiwan, C=TW"
 
-      - name: Sanitize Code & Perfectly Re-encode ic_launcher.png
+      - name: Sanitize Code & Process ic_launcher.png
         run: |
           python3 -c "
           import os, glob, shutil
@@ -63,7 +63,7 @@ jobs:
           for d in res_dirs:
               os.makedirs(d, exist_ok=True)
 
-          # 2. 尋找使用者上傳的 ic_launcher.png
+          # 2. 處理使用者的 ic_launcher.png（無損清洗並重構，消除 AAPT2 錯誤）
           icon_candidates = glob.glob('**/ic_launcher.png', recursive=True)
           user_icon_path = icon_candidates[0] if icon_candidates else None
 
@@ -72,18 +72,16 @@ jobs:
               try:
                   with Image.open(user_icon_path) as img:
                       base_img = img.convert('RGBA')
-                      print(f'成功讀取原始圖示: {user_icon_path}')
+                      print(f'成功讀取自訂圖示: {user_icon_path}')
               except Exception as e:
-                  print(f'讀取原始圖片異常 ({e})，轉為動態重建高畫質圖標')
+                  print(f'讀取圖示異常: {e}')
 
-          # 若檔案損毀或不存在，自動產生 512x512 高畫質 Astra 品牌圖標
           if base_img is None:
               base_img = Image.new('RGBA', (512, 512), (11, 17, 32, 255))
               draw = ImageDraw.Draw(base_img)
               draw.ellipse((32, 32, 480, 480), outline=(56, 189, 248, 255), width=24)
               draw.ellipse((160, 160, 352, 352), fill=(37, 99, 235, 255))
 
-          # 3. 輸出符合 AAPT2 規範的標準無損 PNG 至各級 mipmap
           sizes = {
               'app/src/main/res/mipmap-mdpi/ic_launcher.png': (48, 48),
               'app/src/main/res/mipmap-hdpi/ic_launcher.png': (72, 72),
@@ -95,21 +93,31 @@ jobs:
 
           for path, size in sizes.items():
               resized = base_img.resize(size, Image.Resampling.LANCZOS)
-              resized.save(path, format='PNG', optimize=False)
+              resized.save(path, format='PNG')
 
-          # 4. 確保 MainActivity.java 放置於正確套件目錄
+          # 3. 確保 Java 檔案純淨度，自動清洗手機端 NBSP 與零寬空白
           target_java_dir = 'app/src/main/java/com/slot/assistant'
           os.makedirs(target_java_dir, exist_ok=True)
           target_main = os.path.join(target_java_dir, 'MainActivity.java')
+
           if not os.path.exists(target_main):
               candidates = [f for f in glob.glob('**/MainActivity.java', recursive=True) if f != target_main]
               if candidates:
                   shutil.copyfile(candidates[0], target_main)
 
+          if os.path.exists(target_main):
+              with open(target_main, 'rb') as fp:
+                  raw = fp.read()
+              raw = raw.replace(b'\xc2\xa0', b' ')
+              for z in [b'\xe2\x80\x8b', b'\xe2\x80\x8c', b'\xe2\x80\x8d', b'\xef\xbb\xbf']:
+                  raw = raw.replace(z, b'')
+              with open(target_main, 'wb') as fp:
+                  fp.write(raw)
+
           if os.path.exists('MainActivity.java'):
               os.remove('MainActivity.java')
 
-          # 5. 生成引用 @mipmap/ic_launcher 的 AndroidManifest.xml
+          # 4. 生成引用自訂圖標的 AndroidManifest.xml
           manifest = '''<?xml version=\"1.0\" encoding=\"utf-8\"?>
           <manifest xmlns:android=\"http://schemas.android.com/apk/res/android\">
               <uses-permission android:name=\"android.permission.INTERNET\" />
@@ -137,7 +145,6 @@ jobs:
           with open('app/src/main/AndroidManifest.xml', 'w', encoding='utf-8') as f:
               f.write('\n'.join([line.strip() for line in manifest.strip().splitlines()]))
 
-          # 6. 生成 values 資源
           strings_xml = '''<?xml version=\"1.0\" encoding=\"utf-8\"?>
           <resources>
               <string name=\"app_name\">Astra Assistant</string>
@@ -154,7 +161,6 @@ jobs:
           with open('app/src/main/res/values/styles.xml', 'w', encoding='utf-8') as f:
               f.write('\n'.join([line.strip() for line in styles_xml.strip().splitlines()]))
 
-          # 7. 生成 Gradle 基礎設定檔
           settings_gradle = '''pluginManagement {
               repositories {
                   google()
@@ -178,7 +184,6 @@ jobs:
           with open('build.gradle', 'w', encoding='utf-8') as f:
               f.write(\"plugins { id 'com.android.application' version '8.3.2' apply false }\")
 
-          # 8. 生成 app/build.gradle
           app_build = '''plugins {
               id 'com.android.application'
           }
