@@ -44,21 +44,20 @@ jobs:
             -keypass AstraSecurePass2026 \
             -dname "CN=AstraStudio, OU=Engineering, O=Astra, L=Taipei, ST=Taiwan, C=TW"
 
-      - name: Force Clean Code, Rebuild Icon & Configure Project
+      - name: Auto-Configure Project, Rebuild Icon & Inject Clean Code
+        shell: python
         run: |
-          # 1. 建立標準專案結構
-          mkdir -p app/src/main/java/com/slot/assistant
-          mkdir -p app/src/main/res/values
-          mkdir -p app/src/main/res/drawable
-          for res in mipmap-mdpi mipmap-hdpi mipmap-xhdpi mipmap-xxhdpi mipmap-xxxhdpi; do
-            mkdir -p app/src/main/res/$res
-          done
-
-          # 2. 自動保留並無損重構使用者的 ic_launcher.png
-          python3 -c "
           import os, glob
           from PIL import Image, ImageDraw
 
+          # 1. 建立標準目錄結構
+          os.makedirs('app/src/main/java/com/slot/assistant', exist_ok=True)
+          os.makedirs('app/src/main/res/values', exist_ok=True)
+          os.makedirs('app/src/main/res/drawable', exist_ok=True)
+          for res in ['mipmap-mdpi', 'mipmap-hdpi', 'mipmap-xhdpi', 'mipmap-xxhdpi', 'mipmap-xxxhdpi']:
+              os.makedirs(f'app/src/main/res/{res}', exist_ok=True)
+
+          # 2. 保留並無損重構使用者的 ic_launcher.png 圖示
           icon_candidates = glob.glob('**/ic_launcher.png', recursive=True)
           user_icon_path = icon_candidates[0] if icon_candidates else None
           base_img = None
@@ -85,15 +84,12 @@ jobs:
               'app/src/main/res/mipmap-xxxhdpi/ic_launcher.png': (192, 192),
               'app/src/main/res/drawable/ic_launcher.png': (192, 192)
           }
-
           for path, size in sizes.items():
               resized = base_img.resize(size, Image.Resampling.LANCZOS)
               resized.save(path, format='PNG')
-          "
 
-          # 3. 強制寫入 100% 正確純淨的 MainActivity.java（自動洗掉所有中文註解與重複代碼）
-          cat << 'EOF' > app/src/main/java/com/slot/assistant/MainActivity.java
-          package com.slot.assistant;
+          # 3. 注入 100% 純淨無誤的 MainActivity.java
+          java_code = r'''package com.slot.assistant;
 
           import android.annotation.SuppressLint;
           import android.content.Intent;
@@ -118,7 +114,7 @@ jobs:
           import android.widget.EditText;
           import android.widget.FrameLayout;
           import android.widget.LinearLayout;
-          import androidx.appcompat.app.AppCompatActivity;
+          androidx.appcompat.app.AppCompatActivity;
 
           import org.json.JSONArray;
           import org.json.JSONObject;
@@ -446,7 +442,7 @@ jobs:
                   }
 
                   int code = conn.getResponseCode();
-                                    InputStream is = (code >= 200 && code < 300) ? conn.getInputStream() : conn.getErrorStream();
+                    InputStream is = (code >= 200 && code < 300) ? conn.getInputStream() : conn.getErrorStream();
                   BufferedReader br = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
                   StringBuilder sb = new StringBuilder();
                   String line;
@@ -720,7 +716,7 @@ jobs:
                       "  hud.style.width = defaultW + 'px'; hud.style.height = defaultH + 'px';" +
                       "});" +
 
-                     "var tog = document.getElementById('hud_tog');" +
+                         "var tog = document.getElementById('hud_tog');" +
                       "var cnt = document.getElementById('hud_content');" +
                       "var titleTxt = document.getElementById('hud_title_txt');" +
                       "bindTap(tog, function() {" +
@@ -778,7 +774,7 @@ jobs:
                       "  btnDo.innerText = '重試';" +
                       "  btnDo.disabled = false;" +
                       "};" +
-                  })();";
+                  "})();";
 
                   view.evaluateJavascript(js, null);
               }
@@ -791,12 +787,13 @@ jobs:
                       super.onBackPressed();
                   }
               }
-          }
-          EOF
+          }'''
+
+          with open('app/src/main/java/com/slot/assistant/MainActivity.java', 'w', encoding='utf-8') as f:
+              f.write(java_code.strip())
 
           # 4. 生成合規的 AndroidManifest.xml
-          cat << 'EOF' > app/src/main/AndroidManifest.xml
-          <?xml version="1.0" encoding="utf-8"?>
+          manifest = '''<?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-permission android:name="android.permission.INTERNET" />
               <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -819,54 +816,25 @@ jobs:
                       </intent-filter>
                   </activity>
               </application>
-          </manifest>
-          EOF
+          </manifest>'''
+          with open('app/src/main/AndroidManifest.xml', 'w', encoding='utf-8') as f:
+              f.write(manifest.strip())
 
           # 5. 生成 values 資源
-          cat << 'EOF' > app/src/main/res/values/strings.xml
-          <?xml version="1.0" encoding="utf-8"?>
-          <resources>
-              <string name="app_name">Astra Assistant</string>
-          </resources>
-          EOF
+          with open('app/src/main/res/values/strings.xml', 'w', encoding='utf-8') as f:
+              f.write('<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <string name="app_name">Astra Assistant</string>\n</resources>')
 
-          cat << 'EOF' > app/src/main/res/values/styles.xml
-          <?xml version="1.0" encoding="utf-8"?>
-          <resources>
-              <style name="AppTheme" parent="Theme.AppCompat.NoActionBar">
-                  <item name="android:windowBackground">@android:color/black</item>
-              </style>
-          </resources>
-          EOF
+          with open('app/src/main/res/values/styles.xml', 'w', encoding='utf-8') as f:
+              f.write('<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <style name="AppTheme" parent="Theme.AppCompat.NoActionBar">\n        <item name="android:windowBackground">@android:color/black</item>\n    </style>\n</resources>')
 
           # 6. 生成 Gradle 設定
-          cat << 'EOF' > settings.gradle
-          pluginManagement {
-              repositories {
-                  google()
-                  mavenCentral()
-                  gradlePluginPortal()
-              }
-          }
-          dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
-              repositories {
-                  google()
-                  mavenCentral()
-              }
-          }
-          rootProject.name = "SlotAssistant"
-          include ':app'
-          EOF
+          with open('settings.gradle', 'w', encoding='utf-8') as f:
+              f.write("pluginManagement {\n    repositories {\n        google()\n        mavenCentral()\n        gradlePluginPortal()\n    }\n}\ndependencyResolutionManagement {\n    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)\n    repositories {\n        google()\n        mavenCentral()\n    }\n}\nrootProject.name = 'SlotAssistant'\ninclude ':app'\n")
 
-          cat << 'EOF' > build.gradle
-          plugins {
-              id 'com.android.application' version '8.3.2' apply false
-          }
-          EOF
+          with open('build.gradle', 'w', encoding='utf-8') as f:
+              f.write("plugins {\n    id 'com.android.application' version '8.3.2' apply false\n}\n")
 
-          cat << 'EOF' > app/build.gradle
-          plugins {
+          app_build = '''plugins {
               id 'com.android.application'
           }
 
@@ -913,20 +881,19 @@ jobs:
           dependencies {
               implementation 'androidx.appcompat:appcompat:1.6.1'
               implementation 'com.google.android.material:material:1.11.0'
-          }
-          EOF
+          }'''
+          with open('app/build.gradle', 'w', encoding='utf-8') as f:
+              f.write(app_build.strip())
 
-          cat << 'EOF' > gradle.properties
-          android.useAndroidX=true
-          android.nonTransitiveRClass=true
-          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
-          EOF
+          with open('gradle.properties', 'w', encoding='utf-8') as f:
+              f.write('android.useAndroidX=true\nandroid.nonTransitiveRClass=true\norg.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8\n')
 
-          touch app/proguard-rules.pro
+          with open('app/proguard-rules.pro', 'w', encoding='utf-8') as f:
+              f.write('# Release rules\n')
 
       - name: Build Official Google Play AAB and Signed APK
         run: |
-          gradle bundleRelease assembleRelease
+          gradle bundleRelease assembleRelease --stacktrace
 
       - name: Upload Google Play AAB Bundle (上架專用)
         uses: actions/upload-artifact@v4
