@@ -685,7 +685,7 @@ public class MainActivity extends AppCompatActivity {
                 btnDo.disabled = false;
             };
         })();
-        """
+        ";
 
         view.evaluateJavascript(js, null);
     }
