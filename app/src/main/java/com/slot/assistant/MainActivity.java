@@ -78,7 +78,6 @@ public class MainActivity extends AppCompatActivity {
         rootLayout.addView(mainContainer, new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
 
-        // 頂部導航列
         topBar = new LinearLayout(this);
         topBar.setOrientation(LinearLayout.HORIZONTAL);
         topBar.setBackgroundColor(Color.parseColor("#0f172a"));
@@ -480,7 +479,7 @@ public class MainActivity extends AppCompatActivity {
                 "'<div id=\"hud_header\" style=\"padding:7px 8px;background:#1e293b;border-radius:9px 9px 0 0;font-weight:bold;color:#38bdf8;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #334155;cursor:move;touch-action:none;flex-shrink:0;\">" +
                     "<span id=\"hud_title_txt\">👁 Astra 深度推論</span>" +
                     "<div style=\"display:flex;align-items:center;gap:3px;\">" +
-                        "<span id=\"hud_scale_m\" style=\"cursor:pointer;color:#94a3b8;font-size:11px;font-weight:bold;padding:0 3px;\">[-]</span>" +
+                     "<span id=\"hud_scale_m\" style=\"cursor:pointer;color:#94a3b8;font-size:11px;font-weight:bold;padding:0 3px;\">[-]</span>" +
                         "<span id=\"hud_scale_p\" style=\"cursor:pointer;color:#94a3b8;font-size:11px;font-weight:bold;padding:0 3px;\">[+]</span>" +
                         "<span id=\"hud_tog\" style=\"cursor:pointer;color:#38bdf8;font-size:11px;font-weight:bold;padding:0 2px;\">[收]</span>" +
                     "</div>" +
@@ -522,170 +521,169 @@ public class MainActivity extends AppCompatActivity {
                 "'<div id=\"hud_resize_handle\" style=\"position:absolute;right:0;bottom:0;width:22px;height:22px;cursor:se-resize;display:flex;align-items:flex-end;justify-content:flex-end;padding:0 3px 2px 0;color:#38bdf8;font-size:12px;touch-action:none;opacity:0.9;z-index:99;\">◢</div>';" +
             "rootTarget.appendChild(hud);" +
 
-            var devId = getDeviceId();
-            document.getElementById('txt_dev_id').innerText = devId;
-            function updateAuthUI() {
-                var authed = isAuthed();
-                var authBox = document.getElementById('hud_auth_box');
-                var authStatus = document.getElementById('hud_auth_status');
-                var btnDo = document.getElementById('btn_do_ai');
-                if (authed) {
-                    authBox.style.display = 'none';
-                    authStatus.style.display = 'flex';
-                    btnDo.style.background = '#2563eb';
-                    btnDo.innerText = '📸 截圖畫面並由 AI 辨識';
-                } else {
-                    authBox.style.display = 'block';
-                    authStatus.style.display = 'none';
-                    btnDo.style.background = '#475569';
-                    btnDo.innerText = '🔒 請輸入哈希金鑰解鎖權限';
-                }
-            }
-            updateAuthUI();
+            "var devId = getDeviceId();" +
+            "document.getElementById('txt_dev_id').innerText = devId;" +
+            "function updateAuthUI() {" +
+            "  var authed = isAuthed();" +
+            "  var authBox = document.getElementById('hud_auth_box');" +
+            "  var authStatus = document.getElementById('hud_auth_status');" +
+            "  var btnDo = document.getElementById('btn_do_ai');" +
+            "  if (authed) {" +
+            "    authBox.style.display = 'none';" +
+            "    authStatus.style.display = 'flex';" +
+            "    btnDo.style.background = '#2563eb';" +
+            "    btnDo.innerText = '📸 截圖畫面並由 AI 辨識';" +
+            "  } else {" +
+            "    authBox.style.display = 'block';" +
+            "    authStatus.style.display = 'none';" +
+            "    btnDo.style.background = '#475569';" +
+            "    btnDo.innerText = '🔒 請輸入哈希金鑰解鎖權限';" +
+            "  }" +
+            "}" +
+            "updateAuthUI();" +
 
-            bindTap(document.getElementById('btn_copy_dev'), function() {
-                if (navigator.clipboard && navigator.clipboard.writeText) {
-                    navigator.clipboard.writeText(devId).then(function() { alert('設備碼已複製：' + devId + '\\n請聯繫技術團隊獲取授權碼！'); });
-                } else { prompt('請複製設備碼：', devId); }
-            });
+            "bindTap(document.getElementById('btn_copy_dev'), function() {" +
+            "  if (navigator.clipboard && navigator.clipboard.writeText) {" +
+            "    navigator.clipboard.writeText(devId).then(function() { alert('設備碼已複製：' + devId + '\\n請聯繫技術團隊獲取授權碼！'); });" +
+            "  } else { prompt('請複製設備碼：', devId); }" +
+            "});" +
 
-            bindTap(document.getElementById('btn_verify_auth'), function() {
-                var code = document.getElementById('inp_auth_code').value.trim();
-                if (!code) { alert('請輸入管理員給予的哈希金鑰！'); return; }
-                var expected = computeValidHash(devId);
-                if (code === expected || code === 'OSC-ADMIN-8888') {
-                    localStorage.setItem('__astra_auth_key', code);
-                    alert('✅ 驗證成功！已解鎖深度圖像演算法。');
-                    updateAuthUI();
-                } else {
-                    alert('❌ 哈希碼無效！請確認輸入是否正確。');
-                }
-            });
+            "bindTap(document.getElementById('btn_verify_auth'), function() {" +
+            "  var code = document.getElementById('inp_auth_code').value.trim();" +
+            "  if (!code) { alert('請輸入管理員給予的哈希金鑰！'); return; }" +
+            "  var expected = computeValidHash(devId);" +
+            "  if (code === expected || code === 'OSC-ADMIN-8888') {" +
+            "    localStorage.setItem('__astra_auth_key', code);" +
+            "    alert('✅ 驗證成功！已解鎖深度圖像演算法。');" +
+            "    updateAuthUI();" +
+            "  } else {" +
+            "    alert('❌ 哈希碼無效！請確認輸入是否正確。');" +
+            "  }" +
+            "});" +
 
-            bindTap(document.getElementById('btn_logout_auth'), function() {
-                if (confirm('確定要註銷目前設備的授權嗎？')) {
-                    localStorage.removeItem('__astra_auth_key');
-                    updateAuthUI();
-                }
-            });
+            "bindTap(document.getElementById('btn_logout_auth'), function() {" +
+            "  if (confirm('確定要註銷目前設備的授權嗎？')) {" +
+            "    localStorage.removeItem('__astra_auth_key');" +
+            "    updateAuthUI();" +
+            "  }" +
+            "});" +
 
-            bindTap(document.getElementById('btn_reset_stats'), function() {
-                document.getElementById('ai_pick_target').innerText = '待命中';
-                document.getElementById('ai_pick_desc').innerText = '點擊下方進行大路與下三路分析';
-                document.getElementById('hud_score').innerText = '已重置';
-            });
+            "bindTap(document.getElementById('btn_reset_stats'), function() {" +
+            "  document.getElementById('ai_pick_target').innerText = '待命中';" +
+            "  document.getElementById('ai_pick_desc').innerText = '點擊下方進行大路與下三路分析';" +
+            "  document.getElementById('hud_score').innerText = '已重置';" +
+            "});" +
 
-            bindTap(document.getElementById('btn_user_guide'), function() {
-                alert('【操作說明】\\n1. 於上方輸入網址載入目標畫面。\\n2. 確保走勢圖與數據欄位清晰。\\n3. 點擊「📸 截圖畫面並由 AI 辨識」開始統計推論。');
-            });
+            "bindTap(document.getElementById('btn_user_guide'), function() {" +
+            "  alert('【操作說明】\\n1. 於上方輸入網址載入目標畫面。\\n2. 確保走勢圖與數據欄位清晰。\\n3. 點擊「📸 截圖畫面並由 AI 辨識」開始統計推論。');" +
+            "});" +
 
-            var header = document.getElementById('hud_header');
-            var isDrag = false, sX, sY, iL, iT;
-            header.addEventListener('touchstart', function(e) {
-                if (e.target.closest('span')) { isDrag = false; return; }
-                isDrag = true; var t = e.touches[0]; var r = hud.getBoundingClientRect();
-                sX = t.clientX; sY = t.clientY; iL = r.left; iT = r.top;
-            }, { passive: true });
-            header.addEventListener('touchmove', function(e) {
-                if (!isDrag) return; var t = e.touches[0];
-                var nX = iL + (t.clientX - sX); var nY = iT + (t.clientY - sY);
-                hud.style.left = Math.max(0, Math.min(nX, window.innerWidth - hud.offsetWidth)) + 'px';
-                hud.style.top = Math.max(0, Math.min(nY, window.innerHeight - hud.offsetHeight)) + 'px';
-                hud.style.right = 'auto';
-            }, { passive: false });
-            header.addEventListener('touchend', function() { isDrag = false; });
+            "var header = document.getElementById('hud_header');" +
+            "var isDrag = false, sX, sY, iL, iT;" +
+            "header.addEventListener('touchstart', function(e) {" +
+            "  if (e.target.closest('span')) { isDrag = false; return; }" +
+            "  isDrag = true; var t = e.touches[0]; var r = hud.getBoundingClientRect();" +
+            "  sX = t.clientX; sY = t.clientY; iL = r.left; iT = r.top;" +
+            "}, { passive: true });" +
+            "header.addEventListener('touchmove', function(e) {" +
+            "  if (!isDrag) return; var t = e.touches[0];" +
+            "  var nX = iL + (t.clientX - sX); var nY = iT + (t.clientY - sY);" +
+            "  hud.style.left = Math.max(0, Math.min(nX, window.innerWidth - hud.offsetWidth)) + 'px';" +
+            "  hud.style.top = Math.max(0, Math.min(nY, window.innerHeight - hud.offsetHeight)) + 'px';" +
+            "  hud.style.right = 'auto';" +
+            "}, { passive: false });" +
+            "header.addEventListener('touchend', function() { isDrag = false; });" +
 
-            var handle = document.getElementById('hud_resize_handle');
-            var isResizing = false, rStartX, rStartY, rStartW, rStartH;
-            handle.addEventListener('touchstart', function(e) {
-                e.stopPropagation(); e.preventDefault();
-                isResizing = true;
-                rStartX = e.touches[0].clientX; rStartY = e.touches[0].clientY;
-                rStartW = hud.offsetWidth; rStartH = hud.offsetHeight;
-            }, { passive: false });
-            window.addEventListener('touchmove', function(e) {
-                if (!isResizing) return;
-                var deltaX = e.touches[0].clientX - rStartX;
-                var deltaY = e.touches[0].clientY - rStartY;
-                var targetW = Math.max(160, Math.min(window.innerWidth - 10, rStartW + deltaX));
-                var targetH = Math.max(160, Math.min(window.innerHeight - 30, rStartH + deltaY));
-                hud.style.width = targetW + 'px';
-                hud.style.height = targetH + 'px';
-                defaultW = targetW; defaultH = targetH;
-            }, { passive: false });
-            window.addEventListener('touchend', function() { isResizing = false; });
+            "var handle = document.getElementById('hud_resize_handle');" +
+            "var isResizing = false, rStartX, rStartY, rStartW, rStartH;" +
+            "handle.addEventListener('touchstart', function(e) {" +
+            "  e.stopPropagation(); e.preventDefault();" +
+            "  isResizing = true;" +
+            "  rStartX = e.touches[0].clientX; rStartY = e.touches[0].clientY;" +
+            "  rStartW = hud.offsetWidth; rStartH = hud.offsetHeight;" +
+            "}, { passive: false });" +
+            "window.addEventListener('touchmove', function(e) {" +
+            "  if (!isResizing) return;" +
+            "  var deltaX = e.touches[0].clientX - rStartX;" +
+            "  var deltaY = e.touches[0].clientY - rStartY;" +
+            "  var targetW = Math.max(160, Math.min(window.innerWidth - 10, rStartW + deltaX));" +
+            "  var targetH = Math.max(160, Math.min(window.innerHeight - 30, rStartH + deltaY));" +
+            "  hud.style.width = targetW + 'px';" +
+            "  hud.style.height = targetH + 'px';" +
+            "  defaultW = targetW; defaultH = targetH;" +
+            "}, { passive: false });" +
+            "window.addEventListener('touchend', function() { isResizing = false; });" +
 
-            bindTap(document.getElementById('hud_scale_m'), function() {
-                defaultW = Math.max(160, hud.offsetWidth - 25);
-                defaultH = Math.max(160, hud.offsetHeight - 40);
-                hud.style.width = defaultW + 'px'; hud.style.height = defaultH + 'px';
-            });
-            bindTap(document.getElementById('hud_scale_p'), function() {
-                defaultW = Math.min(window.innerWidth - 10, hud.offsetWidth + 25);
-                defaultH = Math.min(window.innerHeight - 30, hud.offsetHeight + 40);
-                hud.style.width = defaultW + 'px'; hud.style.height = defaultH + 'px';
-            });
+            "bindTap(document.getElementById('hud_scale_m'), function() {" +
+            "  defaultW = Math.max(160, hud.offsetWidth - 25);" +
+            "  defaultH = Math.max(160, hud.offsetHeight - 40);" +
+            "  hud.style.width = defaultW + 'px'; hud.style.height = defaultH + 'px';" +
+            "});" +
+            "bindTap(document.getElementById('hud_scale_p'), function() {" +
+            "  defaultW = Math.min(window.innerWidth - 10, hud.offsetWidth + 25);" +
+            "  defaultH = Math.min(window.innerHeight - 30, hud.offsetHeight + 40);" +
+            "  hud.style.width = defaultW + 'px'; hud.style.height = defaultH + 'px';" +
+            "});" +
 
-            var tog = document.getElementById('hud_tog');
-            var cnt = document.getElementById('hud_content');
-            var titleTxt = document.getElementById('hud_title_txt');
-            bindTap(tog, function() {
-                if (cnt.style.display === 'none') {
-                    cnt.style.display = 'block'; handle.style.display = 'flex';
-                    hud.style.width = defaultW + 'px'; hud.style.height = defaultH + 'px';
-                    titleTxt.innerText = '👁 Astra 深度推論';
-                    tog.innerText = '[收]';
-                } else {
-                    cnt.style.display = 'none'; handle.style.display = 'none';
-                    hud.style.width = '76px'; hud.style.height = 'auto';
-                    titleTxt.innerText = '👁';
-                    tog.innerText = '[展]';
-                }
-            });
+            "var tog = document.getElementById('hud_tog');" +
+            "var cnt = document.getElementById('hud_content');" +
+            "var titleTxt = document.getElementById('hud_title_txt');" +
+            "bindTap(tog, function() {" +
+            "  if (cnt.style.display === 'none') {" +
+            "    cnt.style.display = 'block'; handle.style.display = 'flex';" +
+            "    hud.style.width = defaultW + 'px'; hud.style.height = defaultH + 'px';" +
+            "    titleTxt.innerText = '👁 Astra 深度推論';" +
+            "    tog.innerText = '[收]';" +
+            "  } else {" +
+            "    cnt.style.display = 'none'; handle.style.display = 'none';" +
+            "    hud.style.width = '76px'; hud.style.height = 'auto';" +
+            "    titleTxt.innerText = '👁';" +
+            "    tog.innerText = '[展]';" +
+            "  }" +
+            "});" +
 
-            function openLink(u) {
-                if (window.AndroidBridge && window.AndroidBridge.openExternalUrl) {
-                    window.AndroidBridge.openExternalUrl(u);
-                } else { window.location.href = u; }
-            }
-            bindTap(document.getElementById('btn_line'), function() { openLink('https://lin.ee/NfoQ9DH'); });
-            bindTap(document.getElementById('btn_tg'), function() { openLink('https://t.me/TG_apk1'); });
+            "function openLink(u) {" +
+            "  if (window.AndroidBridge && window.AndroidBridge.openExternalUrl) {" +
+            "    window.AndroidBridge.openExternalUrl(u);" +
+            "  } else { window.location.href = u; }" +
+            "}" +
+            "bindTap(document.getElementById('btn_line'), function() { openLink('https://lin.ee/NfoQ9DH'); });" +
+            "bindTap(document.getElementById('btn_tg'), function() { openLink('https://t.me/TG_apk1'); });" +
 
-            var btnDo = document.getElementById('btn_do_ai');
-            bindTap(btnDo, function() {
-                if (!isAuthed()) {
-                    alert('🔒 本功能僅限授權用戶使用！\\n請先複製設備碼並聯繫技術團隊獲取哈希授權金鑰。');
-                    return;
-                }
-                btnDo.innerText = '🧠 Astra 深度推論中...';
-                btnDo.disabled = true;
-                if (window.AndroidBridge && window.AndroidBridge.requestVisualAnalysis) {
-                    window.AndroidBridge.requestVisualAnalysis(curMode);
-                }
-            });
+            "var btnDo = document.getElementById('btn_do_ai');" +
+            "bindTap(btnDo, function() {" +
+            "  if (!isAuthed()) {" +
+            "    alert('🔒 本功能僅限授權用戶使用！\\n請先複製設備碼並聯繫技術團隊獲取哈希授權金鑰。');" +
+            "    return;" +
+            "  }" +
+            "  btnDo.innerText = '🧠 Astra 深度推論中...';" +
+            "  btnDo.disabled = true;" +
+            "  if (window.AndroidBridge && window.AndroidBridge.requestVisualAnalysis) {" +
+            "    window.AndroidBridge.requestVisualAnalysis(curMode);" +
+            "  }" +
+            "});" +
 
-            window.__updateAI = function(pick, conf, reason, stats) {
-                var t = document.getElementById('ai_pick_target');
-                var d = document.getElementById('ai_pick_desc');
-                var s = document.getElementById('hud_score');
-                if (t) {
-                    t.innerText = '【' + pick + '】 ' + conf + '%';
-                    t.style.color = (pick === '莊' || pick === '庄') ? '#ef4444' : '#3b82f6';
-                }
-                if (d) d.innerText = reason;
-                if (s) s.innerText = stats;
-                btnDo.innerText = '📸 截圖畫面並由 AI 辨識';
-                btnDo.disabled = false;
-            };
+            "window.__updateAI = function(pick, conf, reason, stats) {" +
+            "  var t = document.getElementById('ai_pick_target');" +
+            "  var d = document.getElementById('ai_pick_desc');" +
+            "  var s = document.getElementById('hud_score');" +
+            "  if (t) {" +
+            "    t.innerText = '【' + pick + '】 ' + conf + '%';" +
+            "    t.style.color = (pick === '莊' || pick === '庄') ? '#ef4444' : '#3b82f6';" +
+            "  }" +
+            "  if (d) d.innerText = reason;" +
+            "  if (s) s.innerText = stats;" +
+            "  btnDo.innerText = '📸 截圖畫面並由 AI 辨識';" +
+            "  btnDo.disabled = false;" +
+            "};" +
 
-            window.__updateAIError = function(msg) {
-                var d = document.getElementById('ai_pick_desc');
-                if (d) d.innerText = '辨識重試: ' + msg;
-                btnDo.innerText = '重試';
-                btnDo.disabled = false;
-            };
-        })();
-        ";
+            "window.__updateAIError = function(msg) {" +
+            "  var d = document.getElementById('ai_pick_desc');" +
+            "  if (d) d.innerText = '辨識重試: ' + msg;" +
+            "  btnDo.innerText = '重試';" +
+            "  btnDo.disabled = false;" +
+            "};" +
+        "})();";
 
         view.evaluateJavascript(js, null);
     }
