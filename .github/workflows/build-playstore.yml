@@ -18,10 +18,136 @@ jobs:
         with:
           distribution: 'temurin'
           java-version: '17'
-          cache: 'gradle'
 
-      - name: Grant Execute Permission for Gradlew
-        run: chmod +x gradlew
+      - name: Set up Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Auto-Configure Android Project Structure
+        run: |
+          # 1. 建立標準 Android 專案目錄結構
+          mkdir -p app/src/main/java/com/slot/assistant
+          mkdir -p app/src/main/res/values
+
+          # 2. 自動將 MainActivity.java 放置於正確套件目錄
+          MAIN_FILE=$(find . -name "MainActivity.java" | head -n 1)
+          if [ -n "$MAIN_FILE" ] && [ "$MAIN_FILE" != "./app/src/main/java/com/slot/assistant/MainActivity.java" ]; then
+            echo "Moving MainActivity.java to standard directory..."
+            cp "$MAIN_FILE" app/src/main/java/com/slot/assistant/MainActivity.java
+          fi
+
+          # 3. 若缺少 AndroidManifest.xml 則自動生成合規設定
+          if [ ! -f "app/src/main/AndroidManifest.xml" ]; then
+            echo "Generating AndroidManifest.xml..."
+            cat << 'EOF' > app/src/main/AndroidManifest.xml
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              <application
+                  android:allowBackup="true"
+                  android:label="Astra Assistant"
+                  android:supportsRtl="true"
+                  android:theme="@style/Theme.AppCompat.NoActionBar"
+                  android:usesCleartextTraffic="true">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:windowSoftInputMode="adjustResize"
+                      android:configChanges="orientation|screenSize">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+              </application>
+          </manifest>
+          EOF
+          fi
+
+          # 4. 若缺少 settings.gradle 則自動生成
+          if [ ! -f "settings.gradle" ]; then
+            echo "Generating settings.gradle..."
+            cat << 'EOF' > settings.gradle
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "SlotAssistant"
+          include ':app'
+          EOF
+          fi
+
+          # 5. 若缺少根目錄 build.gradle 則自動生成
+          if [ ! -f "build.gradle" ]; then
+            echo "Generating root build.gradle..."
+            cat << 'EOF' > build.gradle
+          plugins {
+              id 'com.android.application' version '8.3.2' apply false
+          }
+          EOF
+          fi
+
+          # 6. 若缺少 app/build.gradle 則自動生成
+          if [ ! -f "app/build.gradle" ]; then
+            echo "Generating app/build.gradle..."
+            cat << 'EOF' > app/build.gradle
+          plugins {
+              id 'com.android.application'
+          }
+
+          android {
+              namespace 'com.slot.assistant'
+              compileSdk 34
+
+              defaultConfig {
+                  applicationId "com.slot.assistant"
+                  minSdk 24
+                  targetSdk 34
+                  versionCode 1
+                  versionName "1.0.0"
+              }
+
+              buildTypes {
+                  release {
+                      minifyEnabled false
+                      proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+                  }
+              }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+
+          dependencies {
+              implementation 'androidx.appcompat:appcompat:1.6.1'
+              implementation 'com.google.android.material:material:1.11.0'
+          }
+          EOF
+          fi
+
+          # 7. 建立空白混淆設定與必要屬性檔
+          touch app/proguard-rules.pro
+          if [ ! -f "gradle.properties" ]; then
+            cat << 'EOF' > gradle.properties
+          android.useAndroidX=true
+          android.nonTransitiveRClass=true
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          EOF
+          fi
 
       - name: Generate Official Production Release Keystore
         run: |
@@ -37,57 +163,57 @@ jobs:
 
       - name: Build Google Play AAB & Release APK
         run: |
-          ./gradlew bundleRelease assembleRelease --stacktrace
+          gradle bundleRelease assembleRelease --stacktrace
 
       - name: Sign Google Play Bundle (.aab)
         run: |
+          AAB_FILE=$(find app/build/outputs/bundle/release -name "*.aab" | head -n 1)
+          echo "Found AAB: $AAB_FILE"
           jarsigner -verbose \
             -sigalg SHA256withRSA \
             -digestalg SHA-256 \
             -keystore release.keystore \
             -storepass AstraSecurePass2026 \
             -keypass AstraSecurePass2026 \
-            app/build/outputs/bundle/release/app-release.aab \
+            "$AAB_FILE" \
             playstore_release_key
+          cp "$AAB_FILE" app-release.aab
 
       - name: Sign Release APK (.apk)
         run: |
+          TARGET_APK=$(find app/build/outputs/apk/release -name "*.apk" | head -n 1)
+          echo "Found APK: $TARGET_APK"
           BUILD_TOOLS_DIR=$(ls -d $ANDROID_HOME/build-tools/* | tail -n 1)
-          if [ -f app/build/outputs/apk/release/app-release-unsigned.apk ]; then
-            $BUILD_TOOLS_DIR/apksigner sign \
+          if [ -n "$BUILD_TOOLS_DIR" ] && [ -f "$BUILD_TOOLS_DIR/apksigner" ]; then
+            "$BUILD_TOOLS_DIR/apksigner" sign \
               --ks release.keystore \
               --ks-pass pass:AstraSecurePass2026 \
               --ks-key-alias playstore_release_key \
               --key-pass pass:AstraSecurePass2026 \
               --out app-release-signed.apk \
-              app/build/outputs/apk/release/app-release-unsigned.apk
-          elif [ -f app/build/outputs/apk/release/app-release.apk ]; then
-            $BUILD_TOOLS_DIR/apksigner sign \
-              --ks release.keystore \
-              --ks-pass pass:AstraSecurePass2026 \
-              --ks-key-alias playstore_release_key \
-              --key-pass pass:AstraSecurePass2026 \
-              --out app-release-signed.apk \
-              app/build/outputs/apk/release/app-release.apk
+              "$TARGET_APK"
+          else
+            jarsigner -keystore release.keystore -storepass AstraSecurePass2026 -keypass AstraSecurePass2026 "$TARGET_APK" playstore_release_key
+            cp "$TARGET_APK" app-release-signed.apk
           fi
 
-      - name: Save Production Keystore Artifact (備份金鑰，日後更新 App 必備)
-        uses: actions/upload-artifact@v4
-        with:
-          name: Release-Keystore-Backup
-          path: release.keystore
-          if-no-files-found: warn
-
-      - name: Upload Google Play AAB Bundle (上架用)
+      - name: Upload Google Play AAB Bundle (上架專用)
         uses: actions/upload-artifact@v4
         with:
           name: GooglePlay-Release-AAB
-          path: app/build/outputs/bundle/release/app-release.aab
+          path: app-release.aab
           if-no-files-found: error
 
-      - name: Upload Signed Release APK (手機實測用)
+      - name: Upload Signed Release APK (手機實測專用)
         uses: actions/upload-artifact@v4
         with:
           name: Signed-Release-APK
           path: app-release-signed.apk
+          if-no-files-found: warn
+
+      - name: Backup Keystore (永久金鑰備份)
+        uses: actions/upload-artifact@v4
+        with:
+          name: Release-Keystore-Backup
+          path: release.keystore
           if-no-files-found: warn
