@@ -44,7 +44,7 @@ jobs:
             -keypass AstraSecurePass2026 \
             -dname "CN=AstraStudio, OU=Engineering, O=Astra, L=Taipei, ST=Taiwan, C=TW"
 
-      - name: Auto-Heal Project, Rebuild Icon & Inject Clean Code
+      - name: Force Clean Code, Rebuild Icon & Configure Project
         run: |
           # 1. 建立標準專案結構
           mkdir -p app/src/main/java/com/slot/assistant
@@ -54,7 +54,7 @@ jobs:
             mkdir -p app/src/main/res/$res
           done
 
-          # 2. 自動處理並無損重構使用者的 ic_launcher.png（保留圖標並修復 AAPT2 崩潰）
+          # 2. 自動保留並無損重構使用者的 ic_launcher.png
           python3 -c "
           import os, glob
           from PIL import Image, ImageDraw
@@ -67,9 +67,9 @@ jobs:
               try:
                   with Image.open(user_icon_path) as img:
                       base_img = img.convert('RGBA')
-                      print(f'成功載入原始圖標: {user_icon_path}')
+                      print(f'成功載入自訂圖標: {user_icon_path}')
               except Exception as e:
-                  print(f'讀取原始圖片異常 ({e})，動態生成品牌備用圖標')
+                  print(f'讀取原始圖片異常 ({e})，轉為動態生成圖標')
 
           if base_img is None:
               base_img = Image.new('RGBA', (512, 512), (11, 17, 32, 255))
@@ -91,7 +91,7 @@ jobs:
               resized.save(path, format='PNG')
           "
 
-          # 3. 強制寫入 100% 純淨且經語法驗證的 MainActivity.java（徹底排除中文雜訊）
+          # 3. 強制寫入 100% 正確純淨的 MainActivity.java（自動洗掉所有中文註解與重複代碼）
           cat << 'EOF' > app/src/main/java/com/slot/assistant/MainActivity.java
           package com.slot.assistant;
 
@@ -446,7 +446,7 @@ jobs:
                   }
 
                   int code = conn.getResponseCode();
-                  InputStream is = (code >= 200 && code < 300) ? conn.getInputStream() : conn.getErrorStream();
+                                    InputStream is = (code >= 200 && code < 300) ? conn.getInputStream() : conn.getErrorStream();
                   BufferedReader br = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
                   StringBuilder sb = new StringBuilder();
                   String line;
@@ -720,7 +720,7 @@ jobs:
                       "  hud.style.width = defaultW + 'px'; hud.style.height = defaultH + 'px';" +
                       "});" +
 
-                      "var tog = document.getElementById('hud_tog');" +
+                     "var tog = document.getElementById('hud_tog');" +
                       "var cnt = document.getElementById('hud_content');" +
                       "var titleTxt = document.getElementById('hud_title_txt');" +
                       "bindTap(tog, function() {" +
@@ -794,7 +794,7 @@ jobs:
           }
           EOF
 
-          # 4. 生成乾淨合規的 AndroidManifest.xml
+          # 4. 生成合規的 AndroidManifest.xml
           cat << 'EOF' > app/src/main/AndroidManifest.xml
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -948,4 +948,3 @@ jobs:
           name: Release-Keystore-Backup
           path: release.keystore
           if-no-files-found: warn
-      
