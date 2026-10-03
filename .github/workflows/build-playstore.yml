@@ -19,6 +19,14 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Set up Python & Pillow
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Image Processing Tool
+        run: pip install pillow
+
       - name: Set up Gradle 8.7
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -36,27 +44,62 @@ jobs:
             -keypass AstraSecurePass2026 \
             -dname "CN=AstraStudio, OU=Engineering, O=Astra, L=Taipei, ST=Taiwan, C=TW"
 
-      - name: Auto-Configure & Clean Android Project
+      - name: Sanitize Code & Perfectly Re-encode ic_launcher.png
         run: |
           python3 -c "
           import os, glob, shutil
+          from PIL import Image, ImageDraw
 
-          # 1. 建立標準專案目錄
-          os.makedirs('app/src/main/res/values', exist_ok=True)
+          # 1. 建立標準資源與 mipmap 目錄
+          res_dirs = [
+              'app/src/main/res/mipmap-mdpi',
+              'app/src/main/res/mipmap-hdpi',
+              'app/src/main/res/mipmap-xhdpi',
+              'app/src/main/res/mipmap-xxhdpi',
+              'app/src/main/res/mipmap-xxxhdpi',
+              'app/src/main/res/drawable',
+              'app/src/main/res/values'
+          ]
+          for d in res_dirs:
+              os.makedirs(d, exist_ok=True)
+
+          # 2. 尋找使用者上傳的 ic_launcher.png
+          icon_candidates = glob.glob('**/ic_launcher.png', recursive=True)
+          user_icon_path = icon_candidates[0] if icon_candidates else None
+
+          base_img = None
+          if user_icon_path and os.path.exists(user_icon_path):
+              try:
+                  with Image.open(user_icon_path) as img:
+                      base_img = img.convert('RGBA')
+                      print(f'成功讀取原始圖示: {user_icon_path}')
+              except Exception as e:
+                  print(f'讀取原始圖片異常 ({e})，轉為動態重建高畫質圖標')
+
+          # 若檔案損毀或不存在，自動產生 512x512 高畫質 Astra 品牌圖標
+          if base_img is None:
+              base_img = Image.new('RGBA', (512, 512), (11, 17, 32, 255))
+              draw = ImageDraw.Draw(base_img)
+              draw.ellipse((32, 32, 480, 480), outline=(56, 189, 248, 255), width=24)
+              draw.ellipse((160, 160, 352, 352), fill=(37, 99, 235, 255))
+
+          # 3. 輸出符合 AAPT2 規範的標準無損 PNG 至各級 mipmap
+          sizes = {
+              'app/src/main/res/mipmap-mdpi/ic_launcher.png': (48, 48),
+              'app/src/main/res/mipmap-hdpi/ic_launcher.png': (72, 72),
+              'app/src/main/res/mipmap-xhdpi/ic_launcher.png': (96, 96),
+              'app/src/main/res/mipmap-xxhdpi/ic_launcher.png': (144, 144),
+              'app/src/main/res/mipmap-xxxhdpi/ic_launcher.png': (192, 192),
+              'app/src/main/res/drawable/ic_launcher.png': (192, 192)
+          }
+
+          for path, size in sizes.items():
+              resized = base_img.resize(size, Image.Resampling.LANCZOS)
+              resized.save(path, format='PNG', optimize=False)
+
+          # 4. 確保 MainActivity.java 放置於正確套件目錄
           target_java_dir = 'app/src/main/java/com/slot/assistant'
           os.makedirs(target_java_dir, exist_ok=True)
-
-          # 2. 清洗所有 Java 檔案的手機剪貼簿 NBSP 與隱形字元
-          for f in glob.glob('**/*.java', recursive=True):
-              with open(f, 'rb') as fp:
-                  data = fp.read()
-              data = data.replace(b'\xc2\xa0', b' ')
-              for z in [b'\xe2\x80\x8b', b'\xe2\x80\x8c', b'\xe2\x80\x8d', b'\xef\xbb\xbf']:
-                  data = data.replace(z, b'')
-              with open(f, 'wb') as fp:
-                  fp.write(data)
-
-          # 3. 確保 MainActivity.java 放置於標準套件目錄，並移除根目錄多餘副本
           target_main = os.path.join(target_java_dir, 'MainActivity.java')
           if not os.path.exists(target_main):
               candidates = [f for f in glob.glob('**/MainActivity.java', recursive=True) if f != target_main]
@@ -66,7 +109,7 @@ jobs:
           if os.path.exists('MainActivity.java'):
               os.remove('MainActivity.java')
 
-          # 4. 生成無縮排錯誤的 AndroidManifest.xml
+          # 5. 生成引用 @mipmap/ic_launcher 的 AndroidManifest.xml
           manifest = '''<?xml version=\"1.0\" encoding=\"utf-8\"?>
           <manifest xmlns:android=\"http://schemas.android.com/apk/res/android\">
               <uses-permission android:name=\"android.permission.INTERNET\" />
@@ -74,6 +117,8 @@ jobs:
               <application
                   android:allowBackup=\"true\"
                   android:label=\"@string/app_name\"
+                  android:icon=\"@mipmap/ic_launcher\"
+                  android:roundIcon=\"@mipmap/ic_launcher\"
                   android:supportsRtl=\"true\"
                   android:theme=\"@style/AppTheme\"
                   android:usesCleartextTraffic=\"true\">
@@ -92,7 +137,7 @@ jobs:
           with open('app/src/main/AndroidManifest.xml', 'w', encoding='utf-8') as f:
               f.write('\n'.join([line.strip() for line in manifest.strip().splitlines()]))
 
-          # 5. 生成標準 values 資源檔
+          # 6. 生成 values 資源
           strings_xml = '''<?xml version=\"1.0\" encoding=\"utf-8\"?>
           <resources>
               <string name=\"app_name\">Astra Assistant</string>
@@ -109,7 +154,7 @@ jobs:
           with open('app/src/main/res/values/styles.xml', 'w', encoding='utf-8') as f:
               f.write('\n'.join([line.strip() for line in styles_xml.strip().splitlines()]))
 
-          # 6. 生成標準 settings.gradle
+          # 7. 生成 Gradle 基礎設定檔
           settings_gradle = '''pluginManagement {
               repositories {
                   google()
@@ -130,15 +175,10 @@ jobs:
           with open('settings.gradle', 'w', encoding='utf-8') as f:
               f.write(settings_gradle.strip())
 
-          # 7. 生成根目錄 build.gradle
-          root_build = '''plugins {
-              id 'com.android.application' version '8.3.2' apply false
-          }
-          '''
           with open('build.gradle', 'w', encoding='utf-8') as f:
-              f.write(root_build.strip())
+              f.write(\"plugins { id 'com.android.application' version '8.3.2' apply false }\")
 
-          # 8. 生成直接綁定簽名與關閉 Lint 阻斷的 app/build.gradle
+          # 8. 生成 app/build.gradle
           app_build = '''plugins {
               id 'com.android.application'
           }
@@ -191,12 +231,11 @@ jobs:
           with open('app/build.gradle', 'w', encoding='utf-8') as f:
               f.write(app_build.strip())
 
-          # 9. 生成必要設定檔
           with open('gradle.properties', 'w', encoding='utf-8') as f:
               f.write('android.useAndroidX=true\nandroid.nonTransitiveRClass=true\norg.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8\n')
 
           with open('app/proguard-rules.pro', 'w', encoding='utf-8') as f:
-              f.write('# Release proguard rules\n')
+              f.write('# Release rules\n')
           "
 
       - name: Build Official Google Play AAB and Signed APK
