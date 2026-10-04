@@ -13,42 +13,56 @@ jobs:
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
-      - name: Auto-Sanitize Swift Code (自動清洗不可見字元)
+      - name: Compile and Package IPA
         run: |
+          # 1. 自動深度清洗 ViewController.swift（消除全形空格、不可見字元與語法斷詞）
           python3 -c "
-          import os
+          import os, re, unicodedata
 
           path = 'ios/ViewController.swift'
           if os.path.exists(path):
               with open(path, 'rb') as f:
-                  data = f.read()
+                  raw = f.read()
 
-              # 去除 UTF-8 BOM 標頭
-              if data.startswith(b'\xef\xbb\xbf'):
-                  data = data[3:]
+              # 移除 UTF-8 / UTF-16 BOM 標頭
+              if raw.startswith(b'\xef\xbb\xbf'):
+                  raw = raw[3:]
+              elif raw.startswith(b'\xff\xfe'):
+                  raw = raw.decode('utf-16le').encode('utf-8')
+              elif raw.startswith(b'\xfe\xff'):
+                  raw = raw.decode('utf-16be').encode('utf-8')
 
-              text = data.decode('utf-8', errors='ignore')
+              text = raw.decode('utf-8', errors='ignore')
 
-              # 將網頁複製產生的 Non-Breaking Space、零寬字元還原為標準空白
-              text = text.replace('\u00a0', ' ')
-              text = text.replace('\u202f', ' ')
-              text = text.replace('\ufeff', '')
-              text = text.replace('\u200b', '')
-              text = text.replace('\u200c', '')
-              text = text.replace('\u200d', '')
-              text = text.replace('\r\n', '\n')
+              # Unicode NFKC 正規化（將全形空格 \u3000 與特殊空白轉為標準 ASCII 空白）
+              text = unicodedata.normalize('NFKC', text)
+
+              # 清理所有殘留的不可見字元與特殊空格
+              text = re.sub(r'[\u00a0\u1680\u180e\u2000-\u200b\u202f\u205f\u3000\ufeff]', ' ', text)
+              text = re.sub(r'[\u200b-\u200d\u2060]', '', text)
+
+              # 統一換行符號
+              text = text.replace('\r\n', '\n').replace('\r', '\n')
+
+              # 確保類別宣告與首行屬性為純淨 ASCII 語法
+              lines = text.split('\n')
+              for i, l in enumerate(lines):
+                  if 'class ViewController' in l:
+                      lines[i] = 'class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHandler, UITextFieldDelegate {'
+                  elif 'webView' in l and 'WKWebView' in l:
+                      lines[i] = '    private var webView: WKWebView!'
+
+              text = '\n'.join(lines)
 
               with open(path, 'w', encoding='utf-8') as f:
                   f.write(text)
-              print('ViewController.swift 不可見字元已自動清除乾淨！')
+              print('ViewController.swift 語法與字元清洗完成！')
           "
 
-      - name: Compile and Package IPA
-        run: |
           mkdir -p build/Payload/AstraAssistant.app
           SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
 
-          # 自動補齊 iOS 應用程式啟動入口 (AppDelegate)
+          # 2. 自動補齊 iOS 啟動入口 (AppDelegate)
           cat << 'EOF' > ios/AppDelegate.swift
           import UIKit
 
@@ -64,13 +78,16 @@ jobs:
           }
           EOF
 
-          # 編譯 arm64 原生 iOS 執行檔
+          # 3. 編譯 arm64 原生二進制檔案（啟用 -parse-as-library 並連結 UIKit、WebKit）
           swiftc -sdk "$SDK_PATH" \
                  -target arm64-apple-ios15.0 \
+                 -parse-as-library \
+                 -framework UIKit \
+                 -framework WebKit \
                  ios/AppDelegate.swift ios/ViewController.swift \
                  -o build/Payload/AstraAssistant.app/AstraAssistant
 
-          # 生成 Info.plist
+          # 4. 生成 Info.plist
           cat << 'EOF' > build/Payload/AstraAssistant.app/Info.plist
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -104,7 +121,7 @@ jobs:
           </plist>
           EOF
 
-          # 打包為 IPA 格式
+          # 5. 打包為 IPA 安裝包
           cd build
           zip -qry ../AstraAssistant.ipa Payload
 
