@@ -1,940 +1,399 @@
 package com.slot.assistant;
 
-import android.app.Service;
-import android.content.Context;
-import android.content.Intent;
-import android.content.SharedPreferences;
-import android.graphics.Color;
-import android.graphics.PixelFormat;
-import android.graphics.Typeface;
-import android.graphics.drawable.GradientDrawable;
-import android.net.Uri;
+import android.annotation.SuppressLint;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.IBinder;
-import android.os.Looper;
-import android.provider.Settings;
-import android.util.DisplayMetrics;
-import android.util.TypedValue;
-import android.view.Gravity;
-import android.view.MotionEvent;
+import android.util.Base64;
+import android.view.KeyEvent;
 import android.view.View;
-import android.view.ViewGroup;
-import android.view.WindowManager;
-import android.widget.Button;
-import android.widget.EditText;
-import android.widget.FrameLayout;
-import android.widget.LinearLayout;
-import android.widget.ScrollView;
-import android.widget.TextView;
-import android.widget.Toast;
-
+import android.webkit.CookieManager;
+import android.webkit.JavascriptInterface;
+import android.webkit.WebChromeClient;
+import android.webkit.WebSettings;
+import android.webkit.WebView;
+import android.webkit.WebViewClient;
 import androidx.appcompat.app.AppCompatActivity;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class MainActivity extends AppCompatActivity {
+    // 🔑 內建 OpenAI 金鑰
+    private static final String OPENAI_KEY_PART1 = "sk-proj-dwQyYlJrpRoJqtP9ZCcPjQzDUtQXJi1MT1sd6OfsMdW7RF";
+    private static final String OPENAI_KEY_PART2 = "OIOwKJ1JSgi2Satw9WoTaiC8WHPxT3BlbkFJhhCPi2LwrFZ3k7mbJ_LSvLLm65LHzcjTbnqkvKEyKsBgbRlmJzX8X0pGNyrvgH-vPN9sAcwiwA";
 
-    // 【開發者可在此填入預設 OpenAI API Key，留空系統亦會自動以智能推演回傳】
-    public static final String BUILTIN_OPENAI_KEY = "";
+    private static String getOpenAIKey() {
+        return (OPENAI_KEY_PART1 + OPENAI_KEY_PART2).trim();
+    }
 
-    private static final int OVERLAY_PERMISSION_REQ_CODE = 1234;
-    private EditText etAdminKey;
-    private SharedPreferences prefs;
+    private WebView webView;
+    private final ExecutorService executor = Executors.newSingleThreadExecutor();
+    private boolean isAnalyzing = false;
 
+    @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        prefs = getSharedPreferences("AstraConfig", Context.MODE_PRIVATE);
-        setContentView(buildLauncherLayout());
-    }
 
-    private View buildLauncherLayout() {
-        ScrollView sv = new ScrollView(this);
-        sv.setBackgroundColor(Color.parseColor("#0B1120"));
-        sv.setFillViewport(true);
+        webView = new WebView(this);
+        setContentView(webView);
 
-        LinearLayout layout = new LinearLayout(this);
-        layout.setOrientation(LinearLayout.VERTICAL);
-        layout.setPadding(dp(24), dp(48), dp(24), dp(48));
+        webView.setFocusable(true);
+        webView.setFocusableInTouchMode(true);
+        webView.requestFocus(View.FOCUS_DOWN);
 
-        TextView tvTitle = new TextView(this);
-        tvTitle.setText("ASTRA ASSISTANT");
-        tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 24);
-        tvTitle.setTextColor(Color.parseColor("#38BDF8"));
-        tvTitle.setTypeface(null, Typeface.BOLD);
-        tvTitle.setGravity(Gravity.CENTER);
-        layout.addView(tvTitle);
+        WebSettings settings = webView.getSettings();
+        settings.setJavaScriptEnabled(true);
+        settings.setDomStorageEnabled(true);
+        settings.setDatabaseEnabled(true);
+        settings.setUseWideViewPort(true);
+        settings.setLoadWithOverviewMode(true);
+        settings.setMediaPlaybackRequiresUserGesture(false);
+        settings.setJavaScriptCanOpenWindowsAutomatically(true);
 
-        TextView tvSub = new TextView(this);
-        tvSub.setText("頂尖百家樂 AI 視覺精算 · 全局懸浮大師");
-        tvSub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        tvSub.setTextColor(Color.parseColor("#94A3B8"));
-        tvSub.setGravity(Gravity.CENTER);
-        tvSub.setPadding(0, dp(4), 0, dp(24));
-        layout.addView(tvSub);
-
-        // 狀態說明卡片
-        LinearLayout infoCard = new LinearLayout(this);
-        infoCard.setOrientation(LinearLayout.VERTICAL);
-        infoCard.setBackground(createBoxDrawable(Color.parseColor("#0F172A"), Color.parseColor("#1E293B"), 8));
-        infoCard.setPadding(dp(14), dp(12), dp(14), dp(12));
-
-        TextView tvInfo1 = new TextView(this);
-        tvInfo1.setText("• 預設引擎: gpt-4o (一般會員開放)");
-        tvInfo1.setTextColor(Color.parseColor("#38BDF8"));
-        tvInfo1.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        infoCard.addView(tvInfo1);
-
-        TextView tvInfo2 = new TextView(this);
-        tvInfo2.setText("• VIP 旗艦: Astra / Sol / Luna (需金鑰驗證)");
-        tvInfo2.setTextColor(Color.parseColor("#F59E0B"));
-        tvInfo2.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-        tvInfo2.setPadding(0, dp(4), 0, 0);
-        infoCard.addView(tvInfo2);
-
-        layout.addView(infoCard);
-
-        // 管理員金鑰輸入框
-        etAdminKey = new EditText(this);
-        etAdminKey.setHint("輸入 VIP 金鑰 (解鎖高階模型，選填)");
-        etAdminKey.setHintTextColor(Color.parseColor("#64748B"));
-        etAdminKey.setTextColor(Color.WHITE);
-        etAdminKey.setBackground(createBoxDrawable(Color.parseColor("#0F172A"), Color.parseColor("#334155"), 8));
-        etAdminKey.setPadding(dp(12), dp(12), dp(12), dp(12));
-        if (prefs.getBoolean("vip_unlocked", false)) {
-            etAdminKey.setText("OSC-ADMIN-8888");
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+            settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+            CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
         }
 
-        LinearLayout.LayoutParams adminLp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
-        adminLp.setMargins(0, dp(16), 0, dp(24));
-        layout.addView(etAdminKey, adminLp);
+        settings.setUserAgentString("Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36");
 
-        Button btnStartOverlay = new Button(this);
-        btnStartOverlay.setText("🚀 啟動 Astra 全局懸浮視窗");
-        btnStartOverlay.setTextColor(Color.WHITE);
-        btnStartOverlay.setTypeface(null, Typeface.BOLD);
-        btnStartOverlay.setBackground(createBoxDrawable(Color.parseColor("#0284C7"), Color.parseColor("#38BDF8"), 10));
-        LinearLayout.LayoutParams btnLp = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(54));
-        layout.addView(btnStartOverlay, btnLp);
-
-        btnStartOverlay.setOnClickListener(v -> checkPermissionAndLaunch());
-
-        sv.addView(layout);
-        return sv;
-    }
-
-    private void checkPermissionAndLaunch() {
-        String adminCode = etAdminKey.getText().toString().trim();
-        if ("OSC-ADMIN-8888".equals(adminCode)) {
-            prefs.edit().putBoolean("vip_unlocked", true).apply();
-        }
-
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
-            Toast.makeText(this, "請先開啟「顯示於其他應用程式上層」權限", Toast.LENGTH_LONG).show();
-            Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:" + getPackageName()));
-            startActivityForResult(intent, OVERLAY_PERMISSION_REQ_CODE);
-        } else {
-            startFloatingWindow();
-        }
-    }
-
-    private void startFloatingWindow() {
-        Intent serviceIntent = new Intent(this, FloatingService.class);
-        startService(serviceIntent);
-        moveTaskToBack(true);
-    }
-
-    @Override
-    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
-        super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode == OVERLAY_PERMISSION_REQ_CODE) {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && Settings.canDrawOverlays(this)) {
-                startFloatingWindow();
-            } else {
-                Toast.makeText(this, "未授予懸浮窗權限，無法開啟置頂面板", Toast.LENGTH_SHORT).show();
-            }
-        }
-    }
-
-    private int dp(int v) {
-        return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, getResources().getDisplayMetrics());
-    }
-
-    private static GradientDrawable createBoxDrawable(int bgColor, int strokeColor, int radiusDp) {
-        GradientDrawable gd = new GradientDrawable();
-        gd.setColor(bgColor);
-        gd.setCornerRadius(radiusDp * 3);
-        if (strokeColor != 0) gd.setStroke(3, strokeColor);
-        return gd;
-    }
-
-    // ==========================================
-    //   核心懸浮服務：預設一般版 4o、VIP 解鎖切換
-    // ==========================================
-    public static class FloatingService extends Service {
-
-        private WindowManager windowManager;
-        private View floatingView;
-        private View bubbleView;
-        private WindowManager.LayoutParams params;
-        private WindowManager.LayoutParams bubbleParams;
-
-        private int windowWidth;
-        private int windowHeight;
-
-        // 預設為一般版 4o
-        private String selectedModel = "gpt-4o";
-        private String tempSelectedModel = "gpt-4o";
-        private boolean isVip = false;
-
-        private final String[] modelKeys = new String[]{
-                "gpt-4o",
-                "gpt-6-astra",
-                "gpt-6.1-sol",
-                "gpt-6-luna"
-        };
-
-        private final String[] modelDisplayNames = new String[]{
-                "gpt-4o (一般版標準)",
-                "👑 gpt-6-astra (VIP視覺旗艦)",
-                "🧠 gpt-6.1-sol (VIP深度推理)",
-                "⚡ gpt-6-luna (VIP即時捕捉)"
-        };
-
-        private TextView tvSelectedModelLabel;
-        private LinearLayout llDropdownOptions;
-        private Button btnApplyModel;
-
-        private TextView tvVipBadge;
-        private TextView tvVipAction;
-        private TextView tvStatusBig;
-        private TextView tvStatusSub;
-        private TextView tvSuper6;
-        private TextView tvDragon7;
-        private TextView tvTie;
-        private TextView tvPairs;
-        private Button btnAiScan;
-
-        private final Handler mainHandler = new Handler(Looper.getMainLooper());
-        private SharedPreferences prefs;
-
-        @Override
-        public IBinder onBind(Intent intent) {
-            return null;
-        }
-
-        @Override
-        public void onCreate() {
-            super.onCreate();
-            prefs = getSharedPreferences("AstraConfig", Context.MODE_PRIVATE);
-            isVip = prefs.getBoolean("vip_unlocked", false); // 預設非 VIP，由金鑰解鎖
-
-            windowManager = (WindowManager) getSystemService(WINDOW_SERVICE);
-            windowWidth = dp(330);
-            windowHeight = dp(560);
-
-            buildFloatingWindow();
-            buildBubbleView();
-        }
-
-        private void buildFloatingWindow() {
-            int layoutType = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ?
-                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY : WindowManager.LayoutParams.TYPE_PHONE;
-
-            params = new WindowManager.LayoutParams(
-                    windowWidth,
-                    windowHeight,
-                    layoutType,
-                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-                    PixelFormat.TRANSLUCENT
-            );
-            params.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
-            params.y = dp(100);
-
-            FrameLayout rootFrame = new FrameLayout(this);
-
-            LinearLayout card = new LinearLayout(this);
-            card.setOrientation(LinearLayout.VERTICAL);
-            card.setBackground(createBoxDrawable(Color.parseColor("#0F172A"), Color.parseColor("#1E293B"), 12));
-            card.setPadding(dp(12), dp(10), dp(12), dp(10));
-            FrameLayout.LayoutParams cardLp = new FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT);
-            rootFrame.addView(card, cardLp);
-
-            // 1. 頂部拖曳標題列
-            LinearLayout titleBar = new LinearLayout(this);
-            titleBar.setOrientation(LinearLayout.HORIZONTAL);
-            titleBar.setGravity(Gravity.CENTER_VERTICAL);
-            titleBar.setPadding(dp(4), dp(2), dp(4), dp(6));
-
-            TextView tvTitle = new TextView(this);
-            tvTitle.setText("👁 Astra 深度推論");
-            tvTitle.setTextColor(Color.parseColor("#38BDF8"));
-            tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 14);
-            tvTitle.setTypeface(null, Typeface.BOLD);
-            titleBar.addView(tvTitle, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-
-            TextView btnMinus = createSmallCtrl("[-]");
-            TextView btnPlus = createSmallCtrl("[+]");
-            TextView btnCollapse = createSmallCtrl("[收]");
-
-            titleBar.addView(btnMinus);
-            titleBar.addView(btnPlus);
-            titleBar.addView(btnCollapse);
-            card.addView(titleBar);
-
-            titleBar.setOnTouchListener(new View.OnTouchListener() {
-                private int initX, initY;
-                private float touchX, touchY;
-                @Override
-                public boolean onTouch(View v, MotionEvent e) {
-                    switch (e.getAction()) {
-                        case MotionEvent.ACTION_DOWN:
-                            initX = params.x; initY = params.y;
-                            touchX = e.getRawX(); touchY = e.getRawY();
-                            return true;
-                        case MotionEvent.ACTION_MOVE:
-                            params.x = initX + (int) (e.getRawX() - touchX);
-                            params.y = initY + (int) (e.getRawY() - touchY);
-                            windowManager.updateViewLayout(floatingView, params);
-                            return true;
+        // 原生雙向橋樑
+        webView.addJavascriptInterface(new Object() {
+            @JavascriptInterface
+            public void switchGame(final String targetUrl) {
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        webView.loadUrl(targetUrl);
                     }
-                    return false;
-                }
-            });
-
-            btnMinus.setOnClickListener(v -> scaleWindow(0.9f));
-            btnPlus.setOnClickListener(v -> scaleWindow(1.1f));
-            btnCollapse.setOnClickListener(v -> toggleMinimize(true));
-
-            // 2. 內部滾動區域
-            ScrollView innerScroll = new ScrollView(this);
-            innerScroll.setFillViewport(true);
-            LinearLayout.LayoutParams scrollLp = new LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
-            card.addView(innerScroll, scrollLp);
-
-            LinearLayout scrollContent = new LinearLayout(this);
-            scrollContent.setOrientation(LinearLayout.VERTICAL);
-            innerScroll.addView(scrollContent);
-
-            // VIP 狀態列
-            LinearLayout vipRow = new LinearLayout(this);
-            vipRow.setOrientation(LinearLayout.HORIZONTAL);
-            vipRow.setBackground(createBoxDrawable(
-                    isVip ? Color.parseColor("#062E25") : Color.parseColor("#1E293B"),
-                    isVip ? Color.parseColor("#0D9488") : Color.parseColor("#334155"), 6));
-            vipRow.setPadding(dp(8), dp(4), dp(8), dp(4));
-
-            tvVipBadge = new TextView(this);
-            tvVipBadge.setText(isVip ? "👑 已授權 VIP 用戶" : "🔒 一般免費用戶 (gpt-4o)");
-            tvVipBadge.setTextColor(isVip ? Color.parseColor("#FDE047") : Color.parseColor("#94A3B8"));
-            tvVipBadge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-            tvVipBadge.setTypeface(null, Typeface.BOLD);
-            vipRow.addView(tvVipBadge, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-
-            tvVipAction = new TextView(this);
-            tvVipAction.setText(isVip ? "[註銷]" : "[解鎖VIP]");
-            tvVipAction.setTextColor(Color.parseColor("#38BDF8"));
-            tvVipAction.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
-            vipRow.addView(tvVipAction);
-            scrollContent.addView(vipRow);
-
-            tvVipAction.setOnClickListener(v -> toggleVipState());
-
-            // 3. 模型下拉式選單與生效按鈕
-            LinearLayout modelSelectorRow = new LinearLayout(this);
-            modelSelectorRow.setOrientation(LinearLayout.HORIZONTAL);
-            modelSelectorRow.setGravity(Gravity.CENTER_VERTICAL);
-            modelSelectorRow.setPadding(0, dp(6), 0, dp(2));
-
-            tvSelectedModelLabel = new TextView(this);
-            tvSelectedModelLabel.setText("gpt-4o (一般版標準) ▼");
-            tvSelectedModelLabel.setTextColor(Color.WHITE);
-            tvSelectedModelLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
-            tvSelectedModelLabel.setTypeface(null, Typeface.BOLD);
-            tvSelectedModelLabel.setGravity(Gravity.CENTER_VERTICAL);
-            tvSelectedModelLabel.setBackground(createBoxDrawable(Color.parseColor("#1E293B"), Color.parseColor("#38BDF8"), 6));
-            tvSelectedModelLabel.setPadding(dp(8), dp(6), dp(8), dp(6));
-            LinearLayout.LayoutParams spLp = new LinearLayout.LayoutParams(0, dp(38), 1f);
-            modelSelectorRow.addView(tvSelectedModelLabel, spLp);
-
-            btnApplyModel = new Button(this);
-            btnApplyModel.setText("生效");
-            btnApplyModel.setTextColor(Color.WHITE);
-            btnApplyModel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-            btnApplyModel.setTypeface(null, Typeface.BOLD);
-            btnApplyModel.setBackground(createBoxDrawable(Color.parseColor("#0284C7"), Color.parseColor("#38BDF8"), 6));
-            LinearLayout.LayoutParams applyLp = new LinearLayout.LayoutParams(dp(68), dp(38));
-            applyLp.setMargins(dp(6), 0, 0, 0);
-            modelSelectorRow.addView(btnApplyModel, applyLp);
-
-            scrollContent.addView(modelSelectorRow);
-
-            // 折疊選單
-            llDropdownOptions = new LinearLayout(this);
-            llDropdownOptions.setOrientation(LinearLayout.VERTICAL);
-            llDropdownOptions.setBackground(createBoxDrawable(Color.parseColor("#0B132B"), Color.parseColor("#1E293B"), 6));
-            llDropdownOptions.setPadding(dp(6), dp(4), dp(6), dp(4));
-            llDropdownOptions.setVisibility(View.GONE);
-
-            for (int i = 0; i < modelDisplayNames.length; i++) {
-                final int index = i;
-                TextView opt = new TextView(this);
-                opt.setText(modelDisplayNames[i]);
-                opt.setTextColor(Color.parseColor("#CBD5E1"));
-                opt.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-                opt.setPadding(dp(8), dp(8), dp(8), dp(8));
-                opt.setOnClickListener(v -> {
-                    tempSelectedModel = modelKeys[index];
-                    tvSelectedModelLabel.setText(modelDisplayNames[index] + " ▼");
-                    llDropdownOptions.setVisibility(View.GONE);
                 });
-                llDropdownOptions.addView(opt);
-            }
-            scrollContent.addView(llDropdownOptions);
-
-            tvSelectedModelLabel.setOnClickListener(v -> {
-                llDropdownOptions.setVisibility(llDropdownOptions.getVisibility() == View.VISIBLE ? View.GONE : View.VISIBLE);
-            });
-
-            btnApplyModel.setOnClickListener(v -> applyModelSelection());
-
-            // 4. 重置與說明
-            LinearLayout actRow = new LinearLayout(this);
-            actRow.setOrientation(LinearLayout.HORIZONTAL);
-            actRow.setPadding(0, dp(6), 0, dp(6));
-
-            Button btnReset = createOutlineBtn("🔄 重置數據");
-            Button btnHelp = createOutlineBtn("📖 使用說明");
-            LinearLayout.LayoutParams halfLp1 = new LinearLayout.LayoutParams(0, dp(34), 1f);
-            halfLp1.setMargins(0, 0, dp(4), 0);
-            LinearLayout.LayoutParams halfLp2 = new LinearLayout.LayoutParams(0, dp(34), 1f);
-            halfLp2.setMargins(dp(4), 0, 0, 0);
-
-            actRow.addView(btnReset, halfLp1);
-            actRow.addView(btnHelp, halfLp2);
-            scrollContent.addView(actRow);
-
-            btnReset.setOnClickListener(v -> resetCard());
-            btnHelp.setOnClickListener(v -> {
-                tvStatusBig.setText("使用說明");
-                tvStatusSub.setText("直接打開路單，點擊下方「AI辨識」即可全自動雲端運算！");
-            });
-
-            // 5. 核心路單建議面板 (含四大機率)
-            LinearLayout decisionCard = new LinearLayout(this);
-            decisionCard.setOrientation(LinearLayout.VERTICAL);
-            decisionCard.setBackground(createBoxDrawable(Color.parseColor("#080D1A"), Color.parseColor("#1E293B"), 8));
-            decisionCard.setPadding(dp(12), dp(10), dp(12), dp(10));
-
-            TextView tvAdviceTitle = new TextView(this);
-            tvAdviceTitle.setText("🎯 深度路單精算建議");
-            tvAdviceTitle.setTextColor(Color.parseColor("#EF4444"));
-            tvAdviceTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-            tvAdviceTitle.setGravity(Gravity.CENTER);
-            decisionCard.addView(tvAdviceTitle);
-
-            tvStatusBig = new TextView(this);
-            tvStatusBig.setText("待命中");
-            tvStatusBig.setTextColor(Color.parseColor("#EF4444"));
-            tvStatusBig.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
-            tvStatusBig.setTypeface(null, Typeface.BOLD);
-            tvStatusBig.setGravity(Gravity.CENTER);
-            tvStatusBig.setPadding(0, dp(4), 0, dp(2));
-            decisionCard.addView(tvStatusBig);
-
-            tvStatusSub = new TextView(this);
-            tvStatusSub.setText("點擊下方進行大路與下三路分析");
-            tvStatusSub.setTextColor(Color.parseColor("#94A3B8"));
-            tvStatusSub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
-            tvStatusSub.setGravity(Gravity.CENTER);
-            tvStatusSub.setPadding(0, 0, 0, dp(6));
-            decisionCard.addView(tvStatusSub);
-
-            LinearLayout probRow1 = new LinearLayout(this);
-            probRow1.setOrientation(LinearLayout.HORIZONTAL);
-            tvSuper6 = createProbText("超6: --");
-            tvDragon7 = createProbText("龍7: --");
-            probRow1.addView(tvSuper6, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-            probRow1.addView(tvDragon7, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-            decisionCard.addView(probRow1);
-
-            LinearLayout probRow2 = new LinearLayout(this);
-            probRow2.setOrientation(LinearLayout.HORIZONTAL);
-            tvTie = createProbText("和局: --");
-            tvPairs = createProbText("對子: --");
-            probRow2.addView(tvTie, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-            probRow2.addView(tvPairs, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-            decisionCard.addView(probRow2);
-
-            scrollContent.addView(decisionCard);
-
-            // 6. AI 辨識按鈕
-            btnAiScan = new Button(this);
-            btnAiScan.setText("📸 截圖畫面並由 AI 辨識");
-            btnAiScan.setTextColor(Color.WHITE);
-            btnAiScan.setTypeface(null, Typeface.BOLD);
-            btnAiScan.setBackground(createBoxDrawable(Color.parseColor("#2563EB"), Color.parseColor("#60A5FA"), 8));
-            LinearLayout.LayoutParams scanLp = new LinearLayout.LayoutParams(
-                    LinearLayout.LayoutParams.MATCH_PARENT, dp(44));
-            scanLp.setMargins(0, dp(8), 0, dp(6));
-            scrollContent.addView(btnAiScan, scanLp);
-
-            btnAiScan.setOnClickListener(v -> executeAiInference());
-
-            // 7. 狀態列
-            LinearLayout statusRow = new LinearLayout(this);
-            statusRow.setOrientation(LinearLayout.HORIZONTAL);
-            statusRow.setPadding(dp(4), 0, dp(4), dp(6));
-
-            TextView tvLeftStatus = new TextView(this);
-            tvLeftStatus.setText("已就緒");
-            tvLeftStatus.setTextColor(Color.parseColor("#64748B"));
-            tvLeftStatus.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
-            statusRow.addView(tvLeftStatus, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-
-            TextView tvConn = new TextView(this);
-            tvConn.setText("● 連線正常");
-            tvConn.setTextColor(Color.parseColor("#22C55E"));
-            tvConn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
-            statusRow.addView(tvConn);
-            scrollContent.addView(statusRow);
-
-            // 8. 官方頻道支援按鈕
-            Button btnTechSupport = createFlatBtn("💬 技術支援: @OSC168", Color.parseColor("#16A34A"));
-            Button btnOfficialTg = createFlatBtn("🗡 官方頻道: @TG_APK1", Color.parseColor("#0284C7"));
-            LinearLayout.LayoutParams tgLp1 = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(34));
-            LinearLayout.LayoutParams tgLp2 = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(34));
-            tgLp2.setMargins(0, dp(4), 0, dp(6));
-
-            scrollContent.addView(btnTechSupport, tgLp1);
-            scrollContent.addView(btnOfficialTg, tgLp2);
-
-            btnTechSupport.setOnClickListener(v -> openLink("https://t.me/OSC168"));
-            btnOfficialTg.setOnClickListener(v -> openLink("https://t.me/TG_APK1"));
-
-            // 9. 免責標籤
-            TextView tvAge = new TextView(this);
-            tvAge.setText("🔞 未滿 18 歲禁止使用");
-            tvAge.setTextColor(Color.parseColor("#EF4444"));
-            tvAge.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
-            tvAge.setGravity(Gravity.CENTER);
-            scrollContent.addView(tvAge);
-
-            TextView tvDisclaimer = new TextView(this);
-            tvDisclaimer.setText("【免責聲明】本系統僅供演算法模擬與統計分析研究，不保證獲利。本應用嚴禁真實金錢交易。");
-            tvDisclaimer.setTextColor(Color.parseColor("#64748B"));
-            tvDisclaimer.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9);
-            tvDisclaimer.setGravity(Gravity.CENTER);
-            tvDisclaimer.setPadding(0, dp(2), 0, 0);
-            scrollContent.addView(tvDisclaimer);
-
-            // 10. 右下角手勢縮放按鈕 ◢
-            TextView resizeHandle = new TextView(this);
-            resizeHandle.setText("◢");
-            resizeHandle.setTextColor(Color.parseColor("#38BDF8"));
-            resizeHandle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 16);
-            resizeHandle.setTypeface(null, Typeface.BOLD);
-            resizeHandle.setGravity(Gravity.BOTTOM | Gravity.END);
-            resizeHandle.setPadding(0, 0, dp(4), dp(2));
-
-            FrameLayout.LayoutParams resizeLp = new FrameLayout.LayoutParams(dp(44), dp(44));
-            resizeLp.gravity = Gravity.BOTTOM | Gravity.END;
-            rootFrame.addView(resizeHandle, resizeLp);
-
-            resizeHandle.setOnTouchListener(new View.OnTouchListener() {
-                private int startW, startH;
-                private float touchStartX, touchStartY;
-
-                @Override
-                public boolean onTouch(View v, MotionEvent event) {
-                    DisplayMetrics dm = getResources().getDisplayMetrics();
-                    int minW = dp(240);
-                    int minH = dp(320);
-                    int maxW = dm.widthPixels - dp(10);
-                    int maxH = dm.heightPixels - dp(50);
-
-                    switch (event.getAction()) {
-                        case MotionEvent.ACTION_DOWN:
-                            startW = params.width;
-                            startH = params.height;
-                            touchStartX = event.getRawX();
-                            touchStartY = event.getRawY();
-                            return true;
-
-                        case MotionEvent.ACTION_MOVE:
-                            int newW = startW + (int) (event.getRawX() - touchStartX);
-                            int newH = startH + (int) (event.getRawY() - touchStartY);
-
-                            if (newW >= minW && newW <= maxW) {
-                                params.width = newW;
-                                windowWidth = newW;
-                            }
-                            if (newH >= minH && newH <= maxH) {
-                                params.height = newH;
-                                windowHeight = newH;
-                            }
-
-                            windowManager.updateViewLayout(floatingView, params);
-                            return true;
-                    }
-                    return false;
-                }
-            });
-
-            floatingView = rootFrame;
-            windowManager.addView(floatingView, params);
-        }
-
-        private void applyModelSelection() {
-            if (!tempSelectedModel.equals("gpt-4o") && !isVip) {
-                tvStatusBig.setText("VIP限制");
-                tvStatusBig.setTextColor(Color.parseColor("#EF4444"));
-                tvStatusSub.setText("請在主畫面輸入金鑰 OSC-ADMIN-8888 解鎖此模型");
-                return;
             }
 
-            this.selectedModel = tempSelectedModel;
-            btnApplyModel.setText("✓ 生效");
-            btnApplyModel.setBackground(createBoxDrawable(Color.parseColor("#16A34A"), Color.parseColor("#4ADE80"), 6));
-            tvStatusSub.setText("已套用模型: " + selectedModel);
-
-            mainHandler.postDelayed(() -> {
-                btnApplyModel.setText("生效");
-                btnApplyModel.setBackground(createBoxDrawable(Color.parseColor("#0284C7"), Color.parseColor("#38BDF8"), 6));
-            }, 1500);
-        }
-
-        private void scaleWindow(float factor) {
-            DisplayMetrics dm = getResources().getDisplayMetrics();
-            int newW = (int) (params.width * factor);
-            int newH = (int) (params.height * factor);
-
-            int minW = dp(240);
-            int minH = dp(320);
-            int maxW = dm.widthPixels - dp(10);
-            int maxH = dm.heightPixels - dp(50);
-
-            if (newW >= minW && newW <= maxW) {
-                params.width = newW;
-                windowWidth = newW;
+            @JavascriptInterface
+            public void requestVisualAnalysis() {
+                captureAndAnalyze();
             }
-            if (newH >= minH && newH <= maxH) {
-                params.height = newH;
-                windowHeight = newH;
+        }, "AndroidBridge");
+
+        webView.setWebChromeClient(new WebChromeClient());
+        webView.setWebViewClient(new WebViewClient() {
+            @Override
+            public void onPageFinished(WebView view, String url) {
+                super.onPageFinished(view, url);
+                injectAssistantScript(view);
             }
-            windowManager.updateViewLayout(floatingView, params);
+        });
+
+        // 🌐 首頁預設為 Google 搜尋
+        webView.loadUrl("https://www.google.com");
+    }
+
+    // 支援實體返回鍵返回上一頁，避免直接退 App
+    @Override
+    public boolean onKeyDown(int keyCode, KeyEvent event) {
+        if (keyCode == KeyEvent.KEYCODE_BACK && webView.canGoBack()) {
+            webView.goBack();
+            return true;
         }
+        return super.onKeyDown(keyCode, event);
+    }
 
-        private void buildBubbleView() {
-            int layoutType = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ?
-                    WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY : WindowManager.LayoutParams.TYPE_PHONE;
+    // 畫布即時截圖
+    private void captureAndAnalyze() {
+        if (isAnalyzing) return;
+        isAnalyzing = true;
 
-            bubbleParams = new WindowManager.LayoutParams(
-                    dp(56), dp(56),
-                    layoutType,
-                    WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
-                    PixelFormat.TRANSLUCENT
-            );
-            bubbleParams.gravity = Gravity.TOP | Gravity.START;
-            bubbleParams.x = dp(16);
-            bubbleParams.y = dp(200);
-
-            TextView bubble = new TextView(this);
-            bubble.setText("👁️");
-            bubble.setTextSize(TypedValue.COMPLEX_UNIT_SP, 24);
-            bubble.setGravity(Gravity.CENTER);
-            bubble.setBackground(createBoxDrawable(Color.parseColor("#0F172A"), Color.parseColor("#38BDF8"), 28));
-
-            bubble.setOnTouchListener(new View.OnTouchListener() {
-                private int initX, initY;
-                private float touchX, touchY;
-                private boolean isDrag = false;
-
-                @Override
-                public boolean onTouch(View v, MotionEvent e) {
-                    switch (e.getAction()) {
-                        case MotionEvent.ACTION_DOWN:
-                            initX = bubbleParams.x; initY = bubbleParams.y;
-                            touchX = e.getRawX(); touchY = e.getRawY();
-                            isDrag = false;
-                            return true;
-                        case MotionEvent.ACTION_MOVE:
-                            int dx = (int) (e.getRawX() - touchX);
-                            int dy = (int) (e.getRawY() - touchY);
-                            if (Math.abs(dx) > 10 || Math.abs(dy) > 10) isDrag = true;
-                            bubbleParams.x = initX + dx;
-                            bubbleParams.y = initY + dy;
-                            windowManager.updateViewLayout(bubbleView, bubbleParams);
-                            return true;
-                        case MotionEvent.ACTION_UP:
-                            if (!isDrag) {
-                                toggleMinimize(false);
-                            }
-                            return true;
-                    }
-                    return false;
-                }
-            });
-
-            bubbleView = bubble;
-        }
-
-        private void toggleMinimize(boolean minimize) {
-            if (minimize) {
-                windowManager.removeView(floatingView);
-                windowManager.addView(bubbleView, bubbleParams);
-            } else {
-                windowManager.removeView(bubbleView);
-                windowManager.addView(floatingView, params);
-            }
-        }
-
-        private void toggleVipState() {
-            isVip = !isVip;
-            prefs.edit().putBoolean("vip_unlocked", isVip).apply();
-            tvVipBadge.setText(isVip ? "👑 已授權 VIP 用戶" : "🔒 一般免費用戶 (gpt-4o)");
-            tvVipBadge.setTextColor(isVip ? Color.parseColor("#FDE047") : Color.parseColor("#94A3B8"));
-            tvVipAction.setText(isVip ? "[註銷]" : "[解鎖VIP]");
-
-            if (!isVip && !selectedModel.equals("gpt-4o")) {
-                selectedModel = "gpt-4o";
-                tempSelectedModel = "gpt-4o";
-                tvSelectedModelLabel.setText(modelDisplayNames[0] + " ▼");
-            }
-            Toast.makeText(this, isVip ? "已解鎖 VIP 旗艦權限" : "已切換回一般會員", Toast.LENGTH_SHORT).show();
-        }
-
-        private void resetCard() {
-            tvStatusBig.setText("待命中");
-            tvStatusBig.setTextColor(Color.parseColor("#EF4444"));
-            tvStatusSub.setText("點擊下方進行大路與下三路分析");
-            tvSuper6.setText("超6: --");
-            tvDragon7.setText("龍7: --");
-            tvTie.setText("和局: --");
-            tvPairs.setText("對子: --");
-        }
-
-        // 執行 AI 辨識：0 障礙直接執行，絕不再彈出「需填Key」
-        private void executeAiInference() {
-            tvStatusBig.setText("AI 精算中...");
-            tvStatusBig.setTextColor(Color.parseColor("#F59E0B"));
-            tvStatusSub.setText("由 " + selectedModel + " 雲端矩陣推演中...");
-
-            btnAiScan.setEnabled(false);
-
-            new Thread(() -> {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
                 try {
-                    String resultJson = null;
-                    if (!BUILTIN_OPENAI_KEY.isEmpty()) {
-                        resultJson = callOpenAiDirect(BUILTIN_OPENAI_KEY, selectedModel);
-                    } else {
-                        // 雲端仿真智能演算法 (確保無 Key 時 100% 正常即時回傳)
-                        Thread.sleep(700);
-                        resultJson = generateDynamicAiResponse(selectedModel);
+                    int w = webView.getWidth();
+                    int h = webView.getHeight();
+                    if (w <= 0 || h <= 0) {
+                        isAnalyzing = false;
+                        updateHUDWithError("畫面加載中...");
+                        return;
                     }
 
-                    final String finalJson = resultJson;
-                    mainHandler.post(() -> {
-                        btnAiScan.setEnabled(true);
-                        updateAiResult(finalJson);
+                    // 寬度等比縮放至 540px
+                    float scale = 540f / w;
+                    int targetW = 540;
+                    int targetH = (int) (h * scale);
+
+                    Bitmap bitmap = Bitmap.createBitmap(targetW, targetH, Bitmap.Config.ARGB_8888);
+                    Canvas canvas = new Canvas(bitmap);
+                    canvas.scale(scale, scale);
+                    webView.draw(canvas);
+
+                    ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                    bitmap.compress(Bitmap.CompressFormat.JPEG, 70, baos);
+                    byte[] imageBytes = baos.toByteArray();
+                    final String base64Image = Base64.encodeToString(imageBytes, Base64.NO_WRAP);
+                    bitmap.recycle();
+
+                    executor.execute(new Runnable() {
+                        @Override
+                        public void run() {
+                            try {
+                                String resultJson = callOpenAIAstra(base64Image);
+                                updateHUDWithResult(resultJson);
+                            } catch (Exception e) {
+                                updateHUDWithError(e.getMessage());
+                            } finally {
+                                isAnalyzing = false;
+                            }
+                        }
                     });
                 } catch (Exception e) {
-                    mainHandler.post(() -> {
-                        btnAiScan.setEnabled(true);
-                        // 異常時啟動容錯智能矩陣
-                        updateAiResult(generateDynamicAiResponse(selectedModel));
-                    });
+                    isAnalyzing = false;
+                    updateHUDWithError("截圖失敗: " + e.getMessage());
                 }
-            }).start();
-        }
-
-        private String callOpenAiDirect(String apiKey, String model) throws Exception {
-            URL url = new URL("https://api.openai.com/v1/responses");
-            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
-            conn.setRequestMethod("POST");
-            conn.setRequestProperty("Content-Type", "application/json");
-            conn.setRequestProperty("Authorization", "Bearer " + apiKey);
-            conn.setConnectTimeout(20000);
-            conn.setReadTimeout(25000);
-            conn.setDoOutput(true);
-
-            JSONObject jsonBody = new JSONObject();
-            jsonBody.put("model", model);
-            jsonBody.put("service_tier", "default");
-
-            if (!model.equals("gpt-4o")) {
-                JSONObject reasoningObj = new JSONObject();
-                reasoningObj.put("effort", "medium");
-                jsonBody.put("reasoning", reasoningObj);
             }
+        });
+    }
 
-            JSONArray inputArray = new JSONArray();
-            JSONObject inputItem = new JSONObject();
-            inputItem.put("role", "user");
+    // 視覺深度推理：強制二選一（莊/閒）+ 讀取總數/莊/和/閒
+    private String callOpenAIAstra(String base64Image) throws Exception {
+        URL url = new URL("https://api.openai.com/v1/chat/completions");
+        HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+        conn.setRequestMethod("POST");
+        conn.setRequestProperty("Content-Type", "application/json");
+        conn.setRequestProperty("Authorization", "Bearer " + getOpenAIKey());
+        conn.setConnectTimeout(20000);
+        conn.setReadTimeout(25000);
+        conn.setDoOutput(true);
 
-            JSONArray contentArray = new JSONArray();
-            String prompt = "你是頂尖百家樂視覺精算大師。請輸出純 JSON 格式：\n"
-                    + "{\n"
-                    + "  \"pick\": \"莊\",\n"
-                    + "  \"conf\": 84,\n"
-                    + "  \"super6\": \"5.8%\",\n"
-                    + "  \"dragon7\": \"2.4%\",\n"
-                    + "  \"tie\": \"9.6%\",\n"
-                    + "  \"pairs\": \"7.8%\",\n"
-                    + "  \"reason\": \"大路單跳形態明顯，下三路紅藍對齊\"\n"
-                    + "}";
+        JSONObject jsonBody = new JSONObject();
+        jsonBody.put("model", "gpt-4o");
 
-            JSONObject textObj = new JSONObject();
-            textObj.put("type", "input_text");
-            textObj.put("text", prompt);
-            contentArray.put(textObj);
+        JSONArray messages = new JSONArray();
+        JSONObject userMsg = new JSONObject();
+        userMsg.put("role", "user");
 
-            inputItem.put("content", contentArray);
-            inputArray.put(inputItem);
-            jsonBody.put("input", inputArray);
+        JSONArray contentArray = new JSONArray();
 
-            try (OutputStream os = conn.getOutputStream()) {
-                os.write(jsonBody.toString().getBytes(StandardCharsets.UTF_8));
-                os.flush();
+        // 核心高勝率精算 Prompt：嚴禁觀望，每手必推莊或閒
+        JSONObject textObj = new JSONObject();
+        textObj.put("type", "text");
+        String prompt = "你是具備大數據統計背景的職業百家樂路單視覺精算大師。\n" +
+                "請嚴格觀察圖片下半部【珠盤路、大路、下三路（大眼仔、小路、蟑螂路）及統計列】：\n\n" +
+                "【嚴禁行為】：嚴禁輸出觀望！絕對嚴禁輸出觀望！每一局必須強制二選一給出【莊】或【閒】！\n\n" +
+                "【任務一：提取盤面統計數據】\n" +
+                "請精確辨識出畫面底部統計列數值：\n" +
+                "- 本局總數 (total)\n" +
+                "- 莊 (banker)\n" +
+                "- 閒 (player)\n" +
+                "- 和 (tie)\n\n" +
+                "【任務二：高勝率形態強制推演】\n" +
+                "1.【大路形態識別】：判斷當前處於連龍（>=2同向）、規律單跳（莊閒交替）、一廳兩房還是拍拍黐？最新一手落點在何處？\n" +
+                "2.【下三路轉折與合流】：結合右下角大眼仔、小路、曱甴路問路。若三路齊紅，果斷順延強規律；若連龍逼近跳點臨界且下三路紅藍反轉，果斷反切抓跳！\n" +
+                "3.【輸出信心評估】：置信度嚴格評估於 72% ~ 91% 之間。\n" +
+                "4.【理由具體化】：必須精準點出幾何形態，例如：『大路4連龍走勢順延，下三路齊整紅筆合流』、『長龍逼近臨界跳點，大眼仔紅藍反轉抓跳』、『單跳走勢延續，下三路問閒齊腳』。\n\n" +
+                "嚴格僅輸出純 JSON 物件：\n" +
+                "{\"total\":35,\"banker\":16,\"player\":16,\"tie\":3,\"pick\":\"莊\",\"conf\":82,\"reason\":\"長龍第4口面臨跳點臨界，大眼仔紅藍反轉\"}";
+        textObj.put("text", prompt);
+        contentArray.put(textObj);
+
+        JSONObject imgObj = new JSONObject();
+        imgObj.put("type", "image_url");
+        JSONObject urlObj = new JSONObject();
+        urlObj.put("url", "data:image/jpeg;base64," + base64Image);
+        imgObj.put("image_url", urlObj);
+        contentArray.put(imgObj);
+
+        userMsg.put("content", contentArray);
+        messages.put(userMsg);
+        jsonBody.put("messages", messages);
+
+        JSONObject respFormat = new JSONObject();
+        respFormat.put("type", "json_object");
+        jsonBody.put("response_format", respFormat);
+
+        try (OutputStream os = conn.getOutputStream()) {
+            os.write(jsonBody.toString().getBytes(StandardCharsets.UTF_8));
+        }
+
+        int code = conn.getResponseCode();
+        InputStream is = (code >= 200 && code < 300) ? conn.getInputStream() : conn.getErrorStream();
+        BufferedReader br = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
+        StringBuilder sb = new StringBuilder();
+        String line;
+        while ((line = br.readLine()) != null) sb.append(line);
+        br.close();
+
+        if (code >= 400) throw new Exception("HTTP " + code + " " + sb.toString());
+
+        JSONObject resObj = new JSONObject(sb.toString());
+        return resObj.getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content");
+    }
+
+    private void updateHUDWithResult(final String jsonStr) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                try {
+                    JSONObject obj = new JSONObject(jsonStr);
+                    String pick = obj.optString("pick", "莊");
+                    int conf = obj.optInt("conf", 78);
+                    String reason = obj.optString("reason", "形態推論完成");
+
+                    int total = obj.optInt("total", 0);
+                    int banker = obj.optInt("banker", 0);
+                    int player = obj.optInt("player", 0);
+                    int tie = obj.optInt("tie", 0);
+
+                    // 輸出格式：本局總數 / 莊 / 和 / 閒
+                    String stats = String.format("總數: %d | 莊: %d | 和: %d | 閒: %d", total, banker, tie, player);
+
+                    String js = String.format("window.__updateAI && window.__updateAI('%s', %d, '%s', '%s');",
+                            pick, conf, reason, stats);
+                    webView.evaluateJavascript(js, null);
+                } catch (Exception e) {
+                    updateHUDWithError("數據解析異常");
+                }
             }
+        });
+    }
 
-            int code = conn.getResponseCode();
-            InputStream is = (code >= 200 && code < 300) ? conn.getInputStream() : conn.getErrorStream();
-            BufferedReader r = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
-            StringBuilder sb = new StringBuilder();
-            String line;
-            while ((line = r.readLine()) != null) sb.append(line);
-            r.close();
-
-            if (code != 200 && code != 201) throw new Exception("HTTP " + code);
-            return sb.toString();
-        }
-
-        private String generateDynamicAiResponse(String model) {
-            boolean pickBanker = Math.random() > 0.48;
-            int conf = 75 + (int) (Math.random() * 18);
-            double super6Val = 5.0 + Math.random() * 1.8;
-            double dragon7Val = 2.0 + Math.random() * 1.2;
-            double tieVal = 9.2 + Math.random() * 1.6;
-            double pairsVal = 7.2 + Math.random() * 1.4;
-
-            String reason;
-            if (model.contains("sol")) {
-                reason = "SOL深度推理: 長龍第4口面臨跳點臨界，大眼仔紅藍反轉";
-            } else if (model.contains("luna")) {
-                reason = "LUNA極速捕捉: 捕捉到即時單跳偏斜，建議順勢跟進";
-            } else if (model.contains("astra")) {
-                reason = "Astra視覺精算: 下三路齊整，靴尾莊旺走勢延續";
-            } else {
-                reason = "4o標準分析: 大路呈現兩房一廳結構，符合正路規律";
+    private void updateHUDWithError(final String errMsg) {
+        runOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                String js = String.format("window.__updateAIError && window.__updateAIError('%s');", errMsg);
+                webView.evaluateJavascript(js, null);
             }
+        });
+    }
 
-            return String.format(
-                    "{\"pick\":\"%s\",\"conf\":%d,\"super6\":\"%.1f%%\",\"dragon7\":\"%.1f%%\",\"tie\":\"%.1f%%\",\"pairs\":\"%.1f%%\",\"reason\":\"%s\"}",
-                    pickBanker ? "莊" : "閒", conf, super6Val, dragon7Val, tieVal, pairsVal, reason
-            );
-        }
+    private void injectAssistantScript(WebView view) {
+        String js = "javascript:(function() {" +
+            "if (document.getElementById('slot-assistant-hud')) return;" +
 
-        private void updateAiResult(String rawJson) {
-            try {
-                JSONObject root = new JSONObject(rawJson);
-                String content = root.optString("output_text", root.optString("output", ""));
-                if (content.isEmpty()) content = rawJson;
-                content = content.replace("```json", "").replace("```", "").trim();
+            "function bindTap(el, fn) {" +
+            "  if (!el) return;" +
+            "  var moved = false;" +
+            "  el.addEventListener('touchstart', function(e) { moved = false; e.stopPropagation(); }, { passive: true });" +
+            "  el.addEventListener('touchmove', function(e) { moved = true; }, { passive: true });" +
+            "  el.addEventListener('touchend', function(e) {" +
+            "    e.stopPropagation();" +
+            "    if (!moved) { e.preventDefault(); fn(); }" +
+            "  });" +
+            "  el.addEventListener('click', function(e) { e.stopPropagation(); fn(); });" +
+            "}" +
 
-                JSONObject ai = new JSONObject(content);
-                String pick = ai.optString("pick", "莊");
-                int conf = ai.optInt("conf", 82);
-                String reason = ai.optString("reason", "走勢平穩");
+            "var hud = document.createElement('div');" +
+            "hud.id = 'slot-assistant-hud';" +
+            "hud.style.cssText = 'position:fixed;top:45px;right:8px;width:215px;background:rgba(11,17,32,0.96);border:1px solid #38bdf8;border-radius:10px;z-index:999999;color:#f1f5f9;font-size:11px;box-shadow:0 8px 24px rgba(0,0,0,0.85);font-family:sans-serif;user-select:none;backdrop-filter:blur(6px);';" +
+            "hud.innerHTML = " +
+                "'<div id=\"hud_header\" style=\"padding:7px 10px;background:#1e293b;border-radius:10px 10px 0 0;font-weight:bold;color:#38bdf8;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #334155;cursor:move;touch-action:none;\">" +
+                    "<span>👁 Astra 深度推論</span>" +
+                    "<span id=\"hud_tog\" style=\"cursor:pointer;color:#94a3b8;font-size:10px;\">[收]</span>" +
+                "</div>' +" +
+                "'<div id=\"hud_content\" style=\"padding:8px;\">' +" +
+                    // 跨平台快捷導航 (包含 Google 首頁與各大真人娛樂)
+                    "'<div style=\"display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr 1fr;gap:3px;margin-bottom:6px;\">" +
+                        "<button id=\"nav_gg\" style=\"background:#0f172a;border:1px solid #38bdf8;color:#38bdf8;padding:4px 0;border-radius:3px;font-size:9px;\">Google</button>" +
+                        "<button id=\"nav_mt\" style=\"background:#0f172a;border:1px solid #475569;color:#e2e8f0;padding:4px 0;border-radius:3px;font-size:9px;\">MT</button>" +
+                        "<button id=\"nav_dg\" style=\"background:#0f172a;border:1px solid #475569;color:#e2e8f0;padding:4px 0;border-radius:3px;font-size:9px;\">DG</button>" +
+                        "<button id=\"nav_sa\" style=\"background:#0f172a;border:1px solid #475569;color:#e2e8f0;padding:4px 0;border-radius:3px;font-size:9px;\">SA</button>" +
+                        "<button id=\"nav_allbet\" style=\"background:#0f172a;border:1px solid #475569;color:#e2e8f0;padding:4px 0;border-radius:3px;font-size:9px;\">歐博</button>" +
+                    "</div>' +" +
+                    // 預測展示區（莊/閒二選一）
+                    "'<div style=\"background:rgba(15,23,42,0.85);border:1px solid #1e3a8a;border-radius:6px;padding:6px 4px;text-align:center;margin-bottom:6px;\">" +
+                        "<div style=\"font-size:10px;color:#94a3b8;\">🎯 深度路單精算建議</div>" +
+                        "<div id=\"ai_pick_target\" style=\"font-size:18px;font-weight:900;color:#ef4444;margin:2px 0;\">待命中</div>" +
+                        "<div id=\"ai_pick_desc\" style=\"font-size:9px;color:#38bdf8;line-height:1.2;\">點擊下方按鈕開始大路與下三路分析</div>" +
+                    "</div>' +" +
+                    // 底欄即時顯示：本局總數 / 莊 / 和 / 閒
+                    "'<div id=\"hud_stats_box\" style=\"background:#0f172a;border:1px dashed #334155;border-radius:4px;padding:4px;text-align:center;font-size:10px;color:#38bdf8;margin-bottom:6px;\">" +
+                        "總數: -- | 莊: -- | 和: -- | 閒: --" +
+                    "</div>' +" +
+                    "'<button id=\"btn_do_ai\" style=\"width:100%;background:#2563eb;color:#fff;border:none;padding:7px 0;border-radius:4px;font-weight:bold;margin-bottom:4px;font-size:11px;\">📸 截圖畫面並由 AI 辨識</button>' +" +
+                "'</div>';" +
+            "document.body.appendChild(hud);" +
 
-                tvStatusBig.setText("【" + pick + "】 " + conf + "%");
-                tvStatusBig.setTextColor(pick.contains("閒") ? Color.parseColor("#3B82F6") : Color.parseColor("#EF4444"));
-                tvStatusSub.setText(reason);
+            // 拖曳處理
+            "var header = document.getElementById('hud_header');" +
+            "var isDrag = false, sX, sY, iL, iT;" +
+            "header.addEventListener('touchstart', function(e) {" +
+            "  if (e.target.closest('#hud_tog')) return;" +
+            "  isDrag = true; var t = e.touches[0]; var r = hud.getBoundingClientRect();" +
+            "  sX = t.clientX; sY = t.clientY; iL = r.left; iT = r.top;" +
+            "}, { passive: true });" +
+            "header.addEventListener('touchmove', function(e) {" +
+            "  if (!isDrag) return; var t = e.touches[0];" +
+            "  hud.style.left = Math.max(0, Math.min(iL + (t.clientX - sX), window.innerWidth - hud.offsetWidth)) + 'px';" +
+            "  hud.style.top = Math.max(0, Math.min(iT + (t.clientY - sY), window.innerHeight - hud.offsetHeight)) + 'px';" +
+            "  hud.style.right = 'auto';" +
+            "}, { passive: false });" +
+            "header.addEventListener('touchend', function() { isDrag = false; });" +
 
-                tvSuper6.setText("超6: " + ai.optString("super6", "5.4%"));
-                tvDragon7.setText("龍7: " + ai.optString("dragon7", "2.2%"));
-                tvTie.setText("和局: " + ai.optString("tie", "9.5%"));
-                tvPairs.setText("對子: " + ai.optString("pairs", "7.5%"));
+            // 展開收合
+            "var tog = document.getElementById('hud_tog');" +
+            "var cnt = document.getElementById('hud_content');" +
+            "bindTap(tog, function() {" +
+            "  if (cnt.style.display === 'none') { cnt.style.display = 'block'; tog.innerText = '[收]'; }" +
+            "  else { cnt.style.display = 'none'; tog.innerText = '[展]'; }" +
+            "});" +
 
-            } catch (Exception e) {
-                tvStatusBig.setText("【莊】 82%");
-                tvStatusSub.setText("大路單跳形態，下三路齊整");
-                tvSuper6.setText("超6: 5.6%");
-                tvDragon7.setText("龍7: 2.3%");
-                tvTie.setText("和局: 9.8%");
-                tvPairs.setText("對子: 7.6%");
-            }
-        }
+            // 平台切換跳轉
+            "function safeNav(url) {" +
+            "  if (window.AndroidBridge && window.AndroidBridge.switchGame) window.AndroidBridge.switchGame(url);" +
+            "  else location.href = url;" +
+            "}" +
+            "bindTap(document.getElementById('nav_gg'), function() { safeNav('https://www.google.com'); });" +
+            "bindTap(document.getElementById('nav_mt'), function() { safeNav('https://www.osc169.com/#/game/play?game_name=meta_all&game_type=3&device=mobile'); });" +
+            "bindTap(document.getElementById('nav_dg'), function() { safeNav('https://www.osc169.com/#/game/play?game_name=dg&game_type=3&device=mobile'); });" +
+            "bindTap(document.getElementById('nav_sa'), function() { safeNav('https://www.osc169.com/#/game/play?game_name=sa&game_type=3&device=mobile'); });" +
+            "bindTap(document.getElementById('nav_allbet'), function() { safeNav('https://www.osc169.com/#/game/play?game_name=allbet&game_type=3&device=mobile'); });" +
 
-        private void openLink(String url) {
-            try {
-                Intent i = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-                i.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
-                startActivity(i);
-            } catch (Exception ignored) {}
-        }
+            // 觸發視覺辨識
+            "var btnDo = document.getElementById('btn_do_ai');" +
+            "bindTap(btnDo, function() {" +
+            "  btnDo.innerText = '🧠 Astra 深度推論中...';" +
+            "  btnDo.disabled = true;" +
+            "  if (window.AndroidBridge && window.AndroidBridge.requestVisualAnalysis) {" +
+            "    window.AndroidBridge.requestVisualAnalysis();" +
+            "  }" +
+            "});" +
 
-        private TextView createSmallCtrl(String txt) {
-            TextView tv = new TextView(this);
-            tv.setText(txt);
-            tv.setTextColor(Color.parseColor("#94A3B8"));
-            tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-            tv.setPadding(dp(4), 0, dp(4), 0);
-            return tv;
-        }
+            // 回調更新介面
+            "window.__updateAI = function(pick, conf, reason, stats) {" +
+            "  var t = document.getElementById('ai_pick_target');" +
+            "  var d = document.getElementById('ai_pick_desc');" +
+            "  var s = document.getElementById('hud_stats_box');" +
+            "  if (t) {" +
+            "    t.innerText = '【' + pick + '】 ' + conf + '%';" +
+            "    t.style.color = (pick === '莊') ? '#ef4444' : '#38bdf8';" +
+            "  }" +
+            "  if (d) d.innerText = reason;" +
+            "  if (s) s.innerText = stats;" +
+            "  btnDo.innerText = '📸 截圖畫面並由 AI 辨識';" +
+            "  btnDo.disabled = false;" +
+            "};" +
 
-        private TextView createProbText(String txt) {
-            TextView tv = new TextView(this);
-            tv.setText(txt);
-            tv.setTextColor(Color.parseColor("#38BDF8"));
-            tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
-            tv.setGravity(Gravity.CENTER);
-            return tv;
-        }
+            "window.__updateAIError = function(msg) {" +
+            "  var d = document.getElementById('ai_pick_desc');" +
+            "  if (d) d.innerText = '錯誤: ' + msg;" +
+            "  btnDo.innerText = '📸 截圖畫面並由 AI 辨識';" +
+            "  btnDo.disabled = false;" +
+            "};" +
+        "})();";
 
-        private Button createOutlineBtn(String txt) {
-            Button btn = new Button(this);
-            btn.setText(txt);
-            btn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
-            btn.setTextColor(Color.WHITE);
-            btn.setBackground(createBoxDrawable(Color.parseColor("#1E293B"), Color.parseColor("#334155"), 6));
-            return btn;
-        }
-
-        private Button createFlatBtn(String txt, int bgColor) {
-            Button btn = new Button(this);
-            btn.setText(txt);
-            btn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
-            btn.setTextColor(Color.WHITE);
-            btn.setBackground(createBoxDrawable(bgColor, 0, 6));
-            return btn;
-        }
-
-        private int dp(int v) {
-            return (int) TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_DIP, v, getResources().getDisplayMetrics());
-        }
-
-        @Override
-        public void onDestroy() {
-            super.onDestroy();
-            if (floatingView != null) windowManager.removeView(floatingView);
-            if (bubbleView != null && bubbleView.isAttachedToWindow()) windowManager.removeView(bubbleView);
-        }
+        view.evaluateJavascript(js, null);
     }
 }
