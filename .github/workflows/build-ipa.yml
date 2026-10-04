@@ -15,7 +15,7 @@ jobs:
 
       - name: Compile and Package IPA
         run: |
-          # 1. 自動深度清洗 ViewController.swift（消除全形空格、不可見字元與語法斷詞）
+          # 1. 自動深度清洗 ViewController.swift（消除全形空格、span 標籤與特殊字元）
           python3 -c "
           import os, re, unicodedata
 
@@ -34,8 +34,12 @@ jobs:
 
               text = raw.decode('utf-8', errors='ignore')
 
-              # Unicode NFKC 正規化（將全形空格 \u3000 與特殊空白轉為標準 ASCII 空白）
+              # Unicode NFKC 正規化（將全形空格與特殊字元轉為 ASCII）
               text = unicodedata.normalize('NFKC', text)
+
+              # 自動濾除複製貼上夾帶的 [span_...] 與 標籤
+              text = re.sub(r'\[span[_\w]*\]\([^\)]*\)', '', text)
+              text = re.sub(r'\]*\]', '', text)
 
               # 清理所有殘留的不可見字元與特殊空格
               text = re.sub(r'[\u00a0\u1680\u180e\u2000-\u200b\u202f\u205f\u3000\ufeff]', ' ', text)
@@ -56,7 +60,7 @@ jobs:
 
               with open(path, 'w', encoding='utf-8') as f:
                   f.write(text)
-              print('ViewController.swift 語法與字元清洗完成！')
+              print('ViewController.swift 標籤與字元已自動清理完畢！')
           "
 
           mkdir -p build/Payload/AstraAssistant.app
