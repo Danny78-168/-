@@ -15,7 +15,7 @@ jobs:
 
       - name: Compile and Package IPA
         run: |
-          # 1. 自動清洗代碼並切換為「直接提示餘額不足」（不發送 gpt-4o 請求）
+          # 1. 自動清洗代碼並完整替換為「直接提示餘額不足」
           python3 -c "
           import os, re, unicodedata
 
@@ -31,18 +31,14 @@ jobs:
 
               text = raw.decode('utf-8', errors='ignore')
 
-              # 徹底過濾所有 AI 引用標籤與 span 標籤
-              tag_cite = 'c' + 'ite'
-              tag_source = 's' + 'ource'
-              tag_span = 's' + 'pan'
+              # 徹底過濾所有引用標籤與 span 標籤
+              text = re.sub(r'\]*\]', '', text)
+              text = re.sub(r'\[source:[^\]]*\]', '', text)
+              text = re.sub(r'\[span[_\w]*\](?:\([^\)]*\))?', '', text)
+              text = re.sub(r'\[\/?span[_\w]*\]', '', text)
+              text = re.sub(r'\((?:start|end)_span\)', '', text)
 
-              text = re.sub(r'\[' + tag_cite + r':[^\]]*\]', '', text)
-              text = re.sub(r'\[' + tag_source + r':[^\]]*\]', '', text)
-              text = re.sub(r'\[' + tag_span + r'[^\]]*\](?:\([^\)]*\))?', '', text)
-              text = re.sub(r'\[\/?' + tag_span + r'[^\]]*\]', '', text)
-              text = re.sub(r'\((?:start|end)_' + tag_span + r'\)', '', text)
-
-              # Unicode 正規化
+              # Unicode 正規化（消除全形空白與特殊字元）
               text = unicodedata.normalize('NFKC', text)
               text = re.sub(r'[\u00a0\u1680\u180e\u2000-\u200b\u202f\u205f\u3000\ufeff]', ' ', text)
               text = re.sub(r'[\u200b-\u200d\u2060]', '', text)
@@ -57,35 +53,29 @@ jobs:
                       lines[i] = '    private var webView: WKWebView!'
               text = '\n'.join(lines)
 
-              # 阻斷外部 API 請求：進入分析時直接觸發餘額不足
-              target_trigger = 'guard let url = URL(string: \"https://api.openai.com/v1/responses\") else { return }'
-              mock_response = '''DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
-                  self?.isAnalyzing = false
-                  self?.updateHUDWithError(\"餘額不足\")
+              # 完整替換 callOpenAIAstra 函式本體（徹底移除 URLRequest/url 殘留代碼）
+              clean_astra_func = '''private func callOpenAIAstra(base64Image: String, mode: String) {
+                  DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                      self?.isAnalyzing = false
+                      self?.updateHUDWithError(\"餘額不足\")
+                  }
               }
-              if true { return }'''
 
-              if target_trigger in text:
-                  text = text.replace(target_trigger, mock_response)
-              else:
-                  # 若有其他端點形式，依函數名稱直接替換首行
-                  text = re.sub(
-                      r'(private\s+func\s+callOpenAIAstra[^{]*\{)',
-                      r'\1\n        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.isAnalyzing = false; self?.updateHUDWithError(\"餘額不足\") }\n        if true { return }',
-                      text,
-                      count=1
-                  )
+              private func extractJson'''
+              text = re.sub(r'private func callOpenAIAstra\(.*?private func extractJson', clean_astra_func, text, flags=re.DOTALL)
 
               # 替換 updateHUDWithError：直接於懸浮面板顯示【餘額不足】
-              target_hud = 'let js = \"window.__updateAIError && window.__updateAIError(\'\\(msg)\');\"'
-              new_hud_js = '''let js = \"var t = document.getElementById(\'ai_pick_target\'); if(t){ t.innerText = \'餘額不足\'; t.style.color = \'#ef4444\'; } var d = document.getElementById(\'ai_pick_desc\'); if(d){ d.innerText = \'API 餘額不足，請充值後使用\'; d.style.color = \'#94a3b8\'; } var s = document.getElementById(\'hud_score\'); if(s){ s.innerText = \'扣款失敗\'; } var b = document.getElementById(\'btn_do_ai\'); if(b){ b.innerText = \'📸 截圖畫面並由 AI 辨識\'; b.disabled = false; }\"'''
-
-              if target_hud in text:
-                  text = text.replace(target_hud, new_hud_js)
+              new_hud_func = '''private func updateHUDWithError(_ msg: String) {
+                  DispatchQueue.main.async { [weak self] in
+                      let js = \"var t = document.getElementById('ai_pick_target'); if(t){ t.innerText = '餘額不足'; t.style.color = '#ef4444'; } var d = document.getElementById('ai_pick_desc'); if(d){ d.innerText = 'API 餘額不足，請充值後使用'; d.style.color = '#94a3b8'; } var s = document.getElementById('hud_score'); if(s){ s.innerText = '扣款失敗'; } var b = document.getElementById('btn_do_ai'); if(b){ b.innerText = '📸 截圖畫面並由 AI 辨識'; b.disabled = false; }\"
+                      self?.webView.evaluateJavaScript(js, completionHandler: nil)
+                  }
+              }'''
+              text = re.sub(r'private func updateHUDWithError\(_ msg: String\) \{.*?self\?\.webView\.evaluateJavaScript\(js, completionHandler: nil\)\s*\}\s*\}', new_hud_func, text, flags=re.DOTALL)
 
               with open(path, 'w', encoding='utf-8') as f:
                   f.write(text)
-              print('已成功套用【直接提示餘額不足】邏輯，OpenAI 請求已徹底關閉！')
+              print('已成功完整重構 callOpenAIAstra，徹底排除 url 變數未定義錯誤！')
           "
 
           mkdir -p build/Payload/AstraAssistant.app
