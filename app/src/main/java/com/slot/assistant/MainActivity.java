@@ -306,22 +306,24 @@ public class MainActivity extends AppCompatActivity {
         JSONObject textObj = new JSONObject();
         textObj.put("type", "text");
 
-        String prompt = "你是頂尖百家樂路單視覺精算大師。請精確解析圖片下半部的路單與統計數據：\n\n" +
-                "【任務一：全廳通用數據精準提取（嚴格防陷阱）】\n" +
-                "1. 庄/莊 (banker)：紅圈或標有「庄/莊/B」旁的數字。\n" +
-                "2. 闲/閒 (player)：藍圈或標有「闲/閒/P」旁的數字。\n" +
-                "3. 和 (tie)：【必須嚴格認準綠底 🟢 寫著「和」或「T」旁邊的數字】！\n" +
-                "   - ⚠️ 絕對禁令：嚴禁把【幸運6 / 🔴6】或【超級7】當成和！\n" +
-                "   - 紅色圓圈裡面印著白字「6」的圖標是幸運6副注，不是和局！\n" +
-                "   - 例如見到『莊 10 閒 22 和 3 🔴6 0』：和局必須提取 3！絕不是 6！\n" +
-                "4. 總數 (total)：\n" +
-                "   - 若有「总/總/#」標籤，直接讀取其數值。\n" +
-                "   - 若畫面未印總數標籤，必須嚴格自檢加總：total = 庄 + 闲 + 和 (如 10+22+3=35)！\n\n" +
-                "【任務二：客觀大路走向分析】\n" +
-                "1. 嚴格鎖定大路【最右側最新一列】！上一列若是紅、最新這列只有1顆藍，屬【單跳/轉向】，絕不可胡扯為連莊！\n" +
-                "2. 嚴禁輸出觀望！必須強制二選一輸出【莊】或【閒】。conf 介於 72%~91%。\n\n" +
+        // 🌟 終極高勝率 Prompt：以官方「問路指示器」為核心，杜絕落點色盲與反向預測
+        String prompt = "你是頂尖職業百家樂路單精算大師。請嚴格解析畫面下半部路單：\n\n" +
+                "【任務一：盤面統計數據精準提取（嚴格對應）】\n" +
+                "1. 總數 (total)：讀取「總數/总/#」旁邊的數字；若無標籤則為 庄+闲+和。\n" +
+                "2. 莊 (banker)：讀取「莊/庄/B/紅圈」旁邊的數字。\n" +
+                "3. 閒 (player)：讀取「閒/闲/P/藍圈」旁邊的數字。\n" +
+                "4. 和 (tie)：【嚴格認準綠底 🟢 寫著「和」旁邊的數字】！嚴禁把幸運6(🔴6)或超級7當成和！\n" +
+                "例如見到『總數 65 莊 32 閒 26 和 7』：total:65, banker:32, player:26, tie:7。\n\n" +
+                "【任務二：高勝率精算（核心：讀取官方【問路】指示器）】\n" +
+                "1.【官方問路對齊（最高權重）】：\n" +
+                "   - 觀察路單右下角「莊問路」與「閒問路」按鈕下的 3 個小圖標（大眼仔、小路、曱甴路）：\n" +
+                "   - 若【莊問路】下方呈現三路齊紅(🔴🔴🔴)或紅多於藍：代表出莊走勢整齊合流，【必須果斷下注【莊】】！\n" +
+                "   - 若【閒問路】下方呈現三路齊紅(🔴🔴🔴)或紅多於藍：代表出閒走勢整齊合流，【必須果斷下注【閒】】！\n" +
+                "2.【大路最新落點視覺核對】：\n" +
+                "   - 嚴格觀察大路最右側最新一列！若最新是紅圈，絕不可說成是出閒！\n" +
+                "3.【輸出規範】：嚴禁輸出觀望！必須強制二選一輸出【莊】或【閒】。conf 介於 78%~92%。\n\n" +
                 "輸出標準純 JSON：\n" +
-                "{\"total\":35,\"banker\":10,\"player\":22,\"tie\":3,\"pick\":\"閒\",\"conf\":82,\"reason\":\"大路最新落點出閒轉向，下三路合流齊腳\"}";
+                "{\"total\":65,\"banker\":32,\"player\":26,\"tie\":7,\"pick\":\"莊\",\"conf\":86,\"reason\":\"大路最新落點為莊，莊問路三路齊紅合流，極強做莊訊號\"}";
 
         textObj.put("text", prompt);
         contentArray.put(textObj);
@@ -375,7 +377,8 @@ public class MainActivity extends AppCompatActivity {
                     int player = obj.optInt("player", 0);
                     int tie = obj.optInt("tie", 0);
 
-                    String stats = String.format("總數: %d | 莊: %d | 和: %d | 閒: %d", total, banker, tie, player);
+                    // 🌟 標準格式：總數 | 莊 | 閒 | 和（完全對齊大廳顯示）
+                    String stats = String.format("總數: %d | 莊: %d | 閒: %d | 和: %d", total, banker, player, tie);
 
                     String js = String.format("window.__updateAI && window.__updateAI('%s', %d, '%s', '%s');",
                             pick, conf, reason, stats);
@@ -432,7 +435,7 @@ public class MainActivity extends AppCompatActivity {
         sb.append("    h += '<div id=\"ai_pick_desc\" style=\"font-size:9px;color:#38bdf8;line-height:1.2;\">請進入牌桌後點擊下方按鈕</div>';");
         sb.append("    h += '</div>';");
         sb.append("    h += '<div id=\"hud_stats_box\" style=\"background:#0f172a;border:1px dashed #334155;border-radius:4px;padding:4px;text-align:center;font-size:10px;color:#38bdf8;margin-bottom:6px;\">';");
-        sb.append("    h += '總數: -- | 莊: -- | 和: -- | 閒: --';");
+        sb.append("    h += '總數: -- | 莊: -- | 閒: -- | 和: --';");
         sb.append("    h += '</div>';");
         sb.append("    h += '<button id=\"btn_do_ai\" style=\"width:100%;background:#2563eb;color:#fff;border:none;padding:7px 0;border-radius:4px;font-weight:bold;font-size:11px;\">📸 截圖畫面並由 AI 辨識</button>';");
         sb.append("    h += '</div>';");
@@ -507,7 +510,7 @@ public class MainActivity extends AppCompatActivity {
         sb.append("      var t = document.getElementById('ai_pick_target');");
         sb.append("      var d = document.getElementById('ai_pick_desc');");
         sb.append("      if (t) { t.innerText = '分析中...'; t.style.color = '#facc15'; }");
-        sb.append("      if (d) { d.innerText = '正在定位最新落點與排版數據...'; }");
+        sb.append("      if (d) { d.innerText = '正在光學核對官方問路指示器...'; }");
         sb.append("      if (window.AndroidBridge && window.AndroidBridge.requestVisualAnalysis) {");
         sb.append("        window.AndroidBridge.requestVisualAnalysis();");
         sb.append("      }");
