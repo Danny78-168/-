@@ -339,7 +339,7 @@ public class MainActivity extends AppCompatActivity {
 
             tvVipAction.setOnClickListener(v -> toggleVipState());
 
-            // 3. 模型切換：原生 Spinner + 生效按鈕（修復主題依賴錯誤）
+            // 3. 模型切換：原生 Spinner + 生效按鈕
             LinearLayout modelSelectorRow = new LinearLayout(this);
             modelSelectorRow.setOrientation(LinearLayout.HORIZONTAL);
             modelSelectorRow.setGravity(Gravity.CENTER_VERTICAL);
@@ -456,7 +456,7 @@ public class MainActivity extends AppCompatActivity {
             tvTie = createProbText("和局: --");
             tvPairs = createProbText("對子: --");
             probRow2.addView(tvTie, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-            probRow2.addView(tvPairs, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+            probRow2.addView(tvPairs, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
             decisionCard.addView(probRow2);
 
             scrollContent.addView(decisionCard);
