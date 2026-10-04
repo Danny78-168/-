@@ -60,12 +60,13 @@ public class MainActivity extends AppCompatActivity {
         LinearLayout rootLayout = new LinearLayout(this);
         rootLayout.setOrientation(LinearLayout.VERTICAL);
         rootLayout.setLayoutParams(new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT));
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.MATCH_PARENT));
 
         int statusBarHeight = 0;
-        int resourceId = getResources().getIdentifier("status_bar_height", "dimen", "android");
-        if (resourceId > 0) {
-            statusBarHeight = getResources().getDimensionPixelSize(resourceId);
+        int resId = getResources().getIdentifier("status_bar_height", "dimen", "android");
+        if (resId > 0) {
+            statusBarHeight = getResources().getDimensionPixelSize(resId);
         }
 
         LinearLayout topBar = new LinearLayout(this);
@@ -82,7 +83,8 @@ public class MainActivity extends AppCompatActivity {
         etUrlInput.setSingleLine(true);
         etUrlInput.setBackgroundColor(Color.parseColor("#1e293b"));
         etUrlInput.setPadding(24, 16, 24, 16);
-        LinearLayout.LayoutParams etParams = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f);
+        LinearLayout.LayoutParams etParams = new LinearLayout.LayoutParams(
+                0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f);
         etParams.setMargins(0, 0, 12, 0);
         etUrlInput.setLayoutParams(etParams);
 
@@ -110,7 +112,8 @@ public class MainActivity extends AppCompatActivity {
         etUrlInput.setOnEditorActionListener(new TextView.OnEditorActionListener() {
             @Override
             public boolean onEditorAction(TextView v, int actionId, KeyEvent event) {
-                if (actionId == EditorInfo.IME_ACTION_GO || actionId == EditorInfo.IME_ACTION_DONE ||
+                if (actionId == EditorInfo.IME_ACTION_GO ||
+                    actionId == EditorInfo.IME_ACTION_DONE ||
                     (event != null && event.getKeyCode() == KeyEvent.KEYCODE_ENTER)) {
                     btnGo.performClick();
                     return true;
@@ -381,7 +384,6 @@ public class MainActivity extends AppCompatActivity {
         sb.append("javascript:(function() {");
         sb.append("  function initHUD() {");
         sb.append("    if (!document.body || document.getElementById('slot-assistant-hud')) return;");
-
         sb.append("    function bindTap(el, fn) {");
         sb.append("      if (!el) return;");
         sb.append("      var moved = false;");
@@ -392,24 +394,19 @@ public class MainActivity extends AppCompatActivity {
         sb.append("      });");
         sb.append("      el.addEventListener('click', function(e) { e.stopPropagation(); fn(); });");
         sb.append("    }");
-
         sb.append("    var hud = document.createElement('div');");
         sb.append("    hud.id = 'slot-assistant-hud';");
         sb.append("    hud.style.cssText = 'position:fixed;top:75px;right:8px;width:215px;background:rgba(11,17,32,0.96);border:1px solid #38bdf8;border-radius:10px;z-index:99999999;color:#f1f5f9;font-size:11px;box-shadow:0 8px 24px rgba(0,0,0,0.85);font-family:sans-serif;user-select:none;backdrop-filter:blur(6px);';");
-
         sb.append("    var h = '';");
         sb.append("    h += '<div id=\"hud_header\" style=\"padding:7px 10px;background:#1e293b;border-radius:10px 10px 0 0;font-weight:bold;color:#38bdf8;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #334155;cursor:move;touch-action:none;\">';");
         sb.append("    h += '<span>👁 Astra 深度推論</span>';");
         sb.append("    h += '<span id=\"hud_tog\" style=\"cursor:pointer;color:#94a3b8;font-size:10px;\">[收]</span>';");
         sb.append("    h += '</div>';");
-
         sb.append("    h += '<div id=\"hud_content\" style=\"padding:8px;\">';");
-
         sb.append("    h += '<div style=\"display:flex;border-bottom:1px solid #334155;margin-bottom:8px;\">';");
         sb.append("    h += '<div id=\"tab_btn_1\" style=\"flex:1;text-align:center;padding:5px 0;cursor:pointer;font-weight:bold;color:#38bdf8;border-bottom:2px solid #38bdf8;\">🎯 AI 精算</div>';");
         sb.append("    h += '<div id=\"tab_btn_2\" style=\"flex:1;text-align:center;padding:5px 0;cursor:pointer;font-weight:bold;color:#94a3b8;border-bottom:2px solid transparent;\">💬 反饋客服</div>';");
         sb.append("    h += '</div>';");
-
         sb.append("    h += '<div id=\"tab_page_1\">';");
         sb.append("    h += '<div style=\"background:rgba(15,23,42,0.85);border:1px solid #1e3a8a;border-radius:6px;padding:6px 4px;text-align:center;margin-bottom:6px;\">';");
         sb.append("    h += '<div style=\"font-size:10px;color:#94a3b8;\">🎯 深度路單精算建議</div>';");
@@ -421,7 +418,6 @@ public class MainActivity extends AppCompatActivity {
         sb.append("    h += '</div>';");
         sb.append("    h += '<button id=\"btn_do_ai\" style=\"width:100%;background:#2563eb;color:#fff;border:none;padding:7px 0;border-radius:4px;font-weight:bold;font-size:11px;\">📸 截圖畫面並由 AI 辨識</button>';");
         sb.append("    h += '</div>';");
-
         sb.append("    h += '<div id=\"tab_page_2\" style=\"display:none;\">';");
         sb.append("    h += '<div style=\"background:#0f172a;border:1px solid #1e293b;border-radius:6px;padding:8px;margin-bottom:8px;\">';");
         sb.append("    h += '<div style=\"display:flex;align-items:center;margin-bottom:4px;\">';");
@@ -438,12 +434,9 @@ public class MainActivity extends AppCompatActivity {
         sb.append("    h += '<button id=\"btn_open_line\" style=\"width:100%;background:#16a34a;color:#fff;border:none;padding:6px 0;border-radius:4px;font-weight:bold;font-size:10px;\">開啟 LINE 官方帳號</button>';");
         sb.append("    h += '</div>';");
         sb.append("    h += '</div>';");
-
         sb.append("    h += '</div>';");
-
-        hud.innerHTML = h;
+        sb.append("    hud.innerHTML = h;");
         sb.append("    document.body.appendChild(hud);");
-
         sb.append("    var header = document.getElementById('hud_header');");
         sb.append("    var isDrag = false, sX, sY, iL, iT;");
         sb.append("    header.addEventListener('touchstart', function(e) {");
@@ -458,7 +451,6 @@ public class MainActivity extends AppCompatActivity {
         sb.append("      hud.style.right = 'auto';");
         sb.append("    }, { passive: false });");
         sb.append("    header.addEventListener('touchend', function() { isDrag = false; });");
-
         sb.append("    var tog = document.getElementById('hud_tog');");
         sb.append("    var cnt = document.getElementById('hud_content');");
         sb.append("    bindTap(tog, function() {");
@@ -466,7 +458,6 @@ public class MainActivity extends AppCompatActivity {
         sb.append("      cnt.style.display = hide ? 'block' : 'none';");
         sb.append("      tog.innerText = hide ? '[收]' : '[展]';");
         sb.append("    });");
-
         sb.append("    var t1Btn = document.getElementById('tab_btn_1');");
         sb.append("    var t2Btn = document.getElementById('tab_btn_2');");
         sb.append("    var p1 = document.getElementById('tab_page_1');");
@@ -481,7 +472,6 @@ public class MainActivity extends AppCompatActivity {
         sb.append("      t2Btn.style.color = '#38bdf8'; t2Btn.style.borderBottom = '2px solid #38bdf8';");
         sb.append("      t1Btn.style.color = '#94a3b8'; t1Btn.style.borderBottom = '2px solid transparent';");
         sb.append("    });");
-
         sb.append("    bindTap(document.getElementById('btn_open_tg'), function() {");
         sb.append("      if (window.AndroidBridge && window.AndroidBridge.openExternalUrl) {");
         sb.append("        window.AndroidBridge.openExternalUrl('https://t.me/TG_apk1');");
@@ -492,7 +482,6 @@ public class MainActivity extends AppCompatActivity {
         sb.append("        window.AndroidBridge.openExternalUrl('https://lin.ee/xquprrD');");
         sb.append("      } else { location.href = 'https://lin.ee/xquprrD'; }");
         sb.append("    });");
-
         sb.append("    var btnDo = document.getElementById('btn_do_ai');");
         sb.append("    bindTap(btnDo, function() {");
         sb.append("      btnDo.innerText = '🧠 Astra 深度推論中...';");
@@ -506,11 +495,9 @@ public class MainActivity extends AppCompatActivity {
         sb.append("      }");
         sb.append("    });");
         sb.append("  }");
-
         sb.append("  if (document.readyState === 'loading') {");
         sb.append("    document.addEventListener('DOMContentLoaded', initHUD);");
         sb.append("  } else { initHUD(); }");
-
         sb.append("  window.__updateAI = function(pick, conf, reason, stats) {");
         sb.append("    var t = document.getElementById('ai_pick_target');");
         sb.append("    var d = document.getElementById('ai_pick_desc');");
@@ -524,7 +511,6 @@ public class MainActivity extends AppCompatActivity {
         sb.append("    if (s) s.innerText = stats;");
         sb.append("    if (b) { b.innerText = '📸 截圖畫面並由 AI 辨識'; b.disabled = false; }");
         sb.append("  };");
-
         sb.append("  window.__updateAIError = function(msg) {");
         sb.append("    var t = document.getElementById('ai_pick_target');");
         sb.append("    var d = document.getElementById('ai_pick_desc');");
