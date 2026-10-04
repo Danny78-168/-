@@ -306,7 +306,6 @@ public class MainActivity extends AppCompatActivity {
         JSONObject textObj = new JSONObject();
         textObj.put("type", "text");
 
-        // 🌟 嚴格防陷阱 Prompt：杜絕將「幸運6/超級7」誤認為「和」
         String prompt = "你是頂尖百家樂路單視覺精算大師。請精確解析圖片下半部的路單與統計數據：\n\n" +
                 "【任務一：全廳通用數據精準提取（嚴格防陷阱）】\n" +
                 "1. 庄/莊 (banker)：紅圈或標有「庄/莊/B」旁的數字。\n" +
@@ -454,7 +453,7 @@ public class MainActivity extends AppCompatActivity {
         sb.append("    h += '</div>';");
         sb.append("    h += '</div>';");
         sb.append("    h += '</div>';");
-        hud.innerHTML = h;
+        sb.append("    hud.innerHTML = h;");
         sb.append("    document.body.appendChild(hud);");
         sb.append("    var header = document.getElementById('hud_header');");
         sb.append("    var isDrag = false, sX, sY, iL, iT;");
