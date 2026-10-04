@@ -21,17 +21,28 @@ import android.widget.LinearLayout;
 
 import androidx.appcompat.app.AppCompatActivity;
 
+import org.json.JSONObject;
+
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.net.HttpURLConnection;
+import java.net.URL;
+
 public class MainActivity extends AppCompatActivity {
+
+    // 已直接填入你的 Cloudflare Worker API 網址
+    public static final String CF_WORKER_BALANCE_URL = "https://openai.zhu90305.workers.dev/";
 
     private WebView webView;
     private EditText etUrl;
+    private double currentBalance = 0.00;
 
     @SuppressLint("SetJavaScriptEnabled")
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // 1. 取得手機狀態列實際高度，避免頂部按鈕被時間、電量覆蓋
+        // 1. 取得手機狀態列實際高度，動態避讓時間與訊號圖示
         int statusBarHeight = 0;
         int resourceId = getResources().getIdentifier("status_bar_height", "dimen", "android");
         if (resourceId > 0) {
@@ -89,7 +100,7 @@ public class MainActivity extends AppCompatActivity {
 
         root.addView(topBar);
 
-        // 4. WebView 容器
+        // 4. WebView 瀏覽容器
         webView = new WebView(this);
         LinearLayout.LayoutParams webParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
@@ -126,13 +137,17 @@ public class MainActivity extends AppCompatActivity {
                 super.onPageFinished(view, url);
                 etUrl.setText(url);
                 injectAssistantScript();
+                fetchRealBalanceFromCloudflare();
             }
         });
 
         webView.setWebChromeClient(new WebChromeClient());
 
         btnRefresh.setOnClickListener(v -> {
-            if (webView != null) webView.reload();
+            if (webView != null) {
+                webView.reload();
+                fetchRealBalanceFromCloudflare();
+            }
         });
 
         btnGo.setOnClickListener(v -> {
@@ -147,6 +162,42 @@ public class MainActivity extends AppCompatActivity {
 
         setContentView(root);
         webView.loadUrl("https://www.google.com/");
+    }
+
+    // 非同步向 Cloudflare Worker 請求 D1 資料庫真實餘額
+    private void fetchRealBalanceFromCloudflare() {
+        new Thread(() -> {
+            try {
+                URL url = new URL(CF_WORKER_BALANCE_URL);
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("GET");
+                conn.setConnectTimeout(6000);
+                conn.setReadTimeout(6000);
+                int code = conn.getResponseCode();
+
+                if (code >= 200 && code < 300) {
+                    BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()));
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = br.readLine()) != null) sb.append(line);
+                    br.close();
+
+                    JSONObject json = new JSONObject(sb.toString());
+                    final double bal = json.optDouble("balance", 0.00);
+                    currentBalance = bal;
+
+                    runOnUiThread(() -> {
+                        String js = "if(window.__updateRealBalance){ window.__updateRealBalance('" + String.format("%.2f", bal) + "'); }";
+                        webView.evaluateJavascript(js, null);
+                    });
+                }
+            } catch (Exception ignored) {
+                runOnUiThread(() -> {
+                    String js = "if(window.__updateRealBalance){ window.__updateRealBalance('0.00'); }";
+                    webView.evaluateJavascript(js, null);
+                });
+            }
+        }).start();
     }
 
     public class AndroidBridge {
@@ -187,7 +238,7 @@ public class MainActivity extends AppCompatActivity {
                 + ""
                 + "  var hud = document.createElement('div');"
                 + "  hud.id = 'astra-hud-container';"
-                + "  hud.style.cssText = 'position:fixed;top:100px;right:14px;width:235px;background:rgba(11,17,32,0.96);border:1.5px solid #38bdf8;border-radius:10px;z-index:2147483647;color:#f1f5f9;font-size:11px;box-shadow:0 8px 30px rgba(0,0,0,0.9);font-family:sans-serif;user-select:none;-webkit-user-select:none;backdrop-filter:blur(8px);display:flex;flex-direction:column;overflow:hidden;touch-action:manipulation;';"
+                + "  hud.style.cssText = 'position:fixed;top:100px;right:14px;width:245px;background:rgba(11,17,32,0.96);border:1.5px solid #38bdf8;border-radius:10px;z-index:2147483647;color:#f1f5f9;font-size:11px;box-shadow:0 8px 30px rgba(0,0,0,0.9);font-family:sans-serif;user-select:none;-webkit-user-select:none;backdrop-filter:blur(8px);display:flex;flex-direction:column;overflow:hidden;touch-action:manipulation;';"
                 + ""
                 + "  hud.innerHTML = "
                 + "    '<div id=\"hud_header\" style=\"padding:8px 10px;background:#1e293b;border-radius:9px 9px 0 0;font-weight:bold;color:#38bdf8;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #334155;cursor:move;touch-action:none;\">' +"
@@ -200,13 +251,27 @@ public class MainActivity extends AppCompatActivity {
                 + "        '<div id=\"tab_service\" style=\"flex:1;text-align:center;padding:8px 0;font-size:11px;font-weight:bold;color:#94a3b8;border-bottom:2px solid transparent;cursor:pointer;\">💬 反饋客服</div>' +"
                 + "      '</div>' +"
                 + "      '<div id=\"panel_ai\" style=\"padding:10px 8px 12px 8px;\">' +"
-                + "        '<div style=\"background:rgba(15,23,42,0.9);border:1px solid #3b82f6;border-radius:6px;padding:8px 4px;text-align:center;margin-bottom:8px;\">' +"
+                + "        '<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;\">' +"
+                + "          '<span style=\"font-size:10px;color:#94a3b8;\">引擎: <b style=\"color:#38bdf8;\">gpt-6-astra</b></span>' +"
+                + "          '<span style=\"font-size:9.5px;color:#f59e0b;background:#1e293b;padding:1px 5px;border-radius:3px;\">VIP 旗艦</span>' +"
+                + "        '</div>' +"
+                + "        '<div style=\"background:rgba(15,23,42,0.9);border:1px solid #3b82f6;border-radius:6px;padding:8px 6px;text-align:center;margin-bottom:8px;\">' +"
                 + "          '<div style=\"font-size:10px;color:#94a3b8;\">🎯 深度路單精算建議</div>' +"
                 + "          '<div id=\"ai_status_main\" style=\"font-size:18px;font-weight:900;color:#ef4444;margin:3px 0;\">待命中</div>' +"
                 + "          '<div id=\"ai_status_sub\" style=\"font-size:10px;color:#94a3b8;\">請進入牌桌後點擊下方按鈕</div>' +"
                 + "        '</div>' +"
-                + "        '<div style=\"background:#080d1a;border:1px solid #1e293b;border-radius:4px;padding:5px 0;text-align:center;margin-bottom:8px;\">' +"
-                + "          '<span id=\"ai_stats_line\" style=\"font-size:10px;color:#64748b;\">總數: -- | 莊: -- | 和: -- | 閒: --</span>' +"
+                + "        '<div style=\"background:#080d1a;border:1px solid #1e293b;border-radius:6px;padding:6px 8px;margin-bottom:8px;font-size:10px;\">' +"
+                + "          '<div style=\"display:flex;justify-content:space-between;color:#94a3b8;margin-bottom:3px;\">' +"
+                + "            '<span>Token: <span id=\"ai_token_detail\" style=\"color:#38bdf8;\">In 1,480 / Out 120</span></span>' +"
+                + "            '<span>本次費用: <b id=\"ai_cost_tag\" style=\"color:#f59e0b;\">$0.0086 USD</b></span>' +"
+                + "          '</div>' +"
+                + "          '<div style=\"display:flex;justify-content:space-between;color:#94a3b8;margin-bottom:4px;\">' +"
+                + "            '<span>剩餘餘額: <b id=\"ai_balance_tag\" style=\"color:#22c55e;\">查詢中...</b></span>' +"
+                + "            '<span style=\"color:#64748b;\">(最低需 $0.01)</span>' +"
+                + "          '</div>' +"
+                + "          '<div id=\"ai_stats_line\" style=\"color:#64748b;text-align:center;border-top:1px dashed #1e293b;padding-top:4px;margin-top:2px;\">' +"
+                + "            '總數: -- | 莊: -- | 和: -- | 閒: --' +"
+                + "          '</div>' +"
                 + "        '</div>' +"
                 + "        '<button id=\"btn_scan_ai\" style=\"width:100%;background:#2563eb;color:#fff;border:none;padding:9px 0;border-radius:6px;font-weight:bold;font-size:11px;cursor:pointer;box-shadow:0 2px 8px rgba(37,99,235,0.4);\">📸 截圖畫面並由 AI 辨識</button>' +"
                 + "      '</div>' +"
@@ -243,7 +308,7 @@ public class MainActivity extends AppCompatActivity {
                 + "  bindTap(colBtn, function() {"
                 + "    if (body.style.display === 'none') {"
                 + "      body.style.display = 'block';"
-                + "      hud.style.width = '235px';"
+                + "      hud.style.width = '245px';"
                 + "      title.innerText = '👁 Astra 深度推論';"
                 + "      colBtn.innerText = '[收]';"
                 + "    } else {"
@@ -270,7 +335,7 @@ public class MainActivity extends AppCompatActivity {
                 + "    panelService.style.display = 'flex'; panelAi.style.display = 'none';"
                 + "  });"
                 + ""
-                + "  // 客服按鈕綁定"
+                + "  // 客服外鏈"
                 + "  bindTap(document.getElementById('btn_tg_cs'), function() {"
                 + "    if (window.AndroidBridge) window.AndroidBridge.openExternalUrl('https://t.me/TG_APK1');"
                 + "  });"
@@ -278,7 +343,7 @@ public class MainActivity extends AppCompatActivity {
                 + "    if (window.AndroidBridge) window.AndroidBridge.openExternalUrl('https://lin.ee/NfoQ9DH');"
                 + "  });"
                 + ""
-                + "  // AI 辨識按鈕綁定"
+                + "  // 點擊辨識"
                 + "  var btnScan = document.getElementById('btn_scan_ai');"
                 + "  bindTap(btnScan, function() {"
                 + "    btnScan.innerText = '推演中...'; btnScan.disabled = true;"
@@ -287,12 +352,28 @@ public class MainActivity extends AppCompatActivity {
                 + "    }, 300);"
                 + "  });"
                 + ""
+                + "  // 接收 Cloudflare Worker 回傳真實餘額"
+                + "  window.__updateRealBalance = function(val) {"
+                + "    var balT = document.getElementById('ai_balance_tag');"
+                + "    if (balT) {"
+                + "      var n = parseFloat(val);"
+                + "      balT.innerText = '$' + val + ' USD';"
+                + "      balT.style.color = (n >= 0.01) ? '#22c55e' : '#ef4444';"
+                + "    }"
+                + "  };"
+                + ""
+                + "  // 點擊觸發餘額不足提示"
                 + "  window.__showInsufficientBalance = function() {"
                 + "    var mainT = document.getElementById('ai_status_main');"
                 + "    var subT = document.getElementById('ai_status_sub');"
                 + "    var statT = document.getElementById('ai_stats_line');"
+                + "    var costT = document.getElementById('ai_cost_tag');"
+                + "    var balT = document.getElementById('ai_balance_tag');"
+                + ""
                 + "    if (mainT) { mainT.innerText = '餘額不足'; mainT.style.color = '#ef4444'; }"
                 + "    if (subT) { subT.innerText = 'API 餘額不足，請充值後使用'; subT.style.color = '#94a3b8'; }"
+                + "    if (costT) { costT.innerText = '$0.0086 USD (扣款失敗)'; costT.style.color = '#ef4444'; }"
+                + "    if (balT) { balT.style.color = '#ef4444'; }"
                 + "    if (statT) { statT.innerText = '總數: -- | 扣款失敗'; statT.style.color = '#f87171'; }"
                 + "    if (btnScan) { btnScan.innerText = '📸 截圖畫面並由 AI 辨識'; btnScan.disabled = false; }"
                 + "  };"
