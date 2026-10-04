@@ -5,6 +5,7 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Message;
 import android.util.Base64;
 import android.view.KeyEvent;
 import android.view.View;
@@ -31,7 +32,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends AppCompatActivity {
-    // 🔑 內建 OpenAI 金鑰
+    // 🔑 拆分字串內建 OpenAI 金鑰
     private static final String OPENAI_KEY_PART1 = "sk-proj-dwQyYlJrpRoJqtP9ZCcPjQzDUtQXJi1MT1sd6OfsMdW7RF";
     private static final String OPENAI_KEY_PART2 = "OIOwKJ1JSgi2Satw9WoTaiC8WHPxT3BlbkFJhhCPi2LwrFZ3k7mbJ_LSvLLm65LHzcjTbnqkvKEyKsBgbRlmJzX8X0pGNyrvgH-vPN9sAcwiwA";
 
@@ -63,6 +64,9 @@ public class MainActivity extends AppCompatActivity {
         settings.setLoadWithOverviewMode(true);
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setJavaScriptCanOpenWindowsAutomatically(true);
+        
+        // 關鍵修復：啟用多視窗支援，配合 WebChromeClient 轉發，解決 SA 真人彈窗失效問題
+        settings.setSupportMultipleWindows(true);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
@@ -71,7 +75,7 @@ public class MainActivity extends AppCompatActivity {
 
         settings.setUserAgentString("Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36");
 
-        // 原生雙向橋樑
+        // 原生雙向通道
         webView.addJavascriptInterface(new Object() {
             @JavascriptInterface
             public void switchGame(final String targetUrl) {
@@ -89,7 +93,17 @@ public class MainActivity extends AppCompatActivity {
             }
         }, "AndroidBridge");
 
-        webView.setWebChromeClient(new WebChromeClient());
+        // 處理彈出視窗轉發至同一畫面（解決 SA 等廠商 window.open 無反應）
+        webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, Message resultMsg) {
+                WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
+                transport.setWebView(view);
+                resultMsg.sendToTarget();
+                return true;
+            }
+        });
+
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageFinished(WebView view, String url) {
@@ -98,11 +112,10 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        // 🌐 首頁預設為 Google 搜尋
+        // 🌐 預設首頁：Google
         webView.loadUrl("https://www.google.com");
     }
 
-    // 支援實體返回鍵返回上一頁，避免直接退 App
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
         if (keyCode == KeyEvent.KEYCODE_BACK && webView.canGoBack()) {
@@ -112,7 +125,6 @@ public class MainActivity extends AppCompatActivity {
         return super.onKeyDown(keyCode, event);
     }
 
-    // 畫布即時截圖
     private void captureAndAnalyze() {
         if (isAnalyzing) return;
         isAnalyzing = true;
@@ -129,7 +141,6 @@ public class MainActivity extends AppCompatActivity {
                         return;
                     }
 
-                    // 寬度等比縮放至 540px
                     float scale = 540f / w;
                     int targetW = 540;
                     int targetH = (int) (h * scale);
@@ -166,7 +177,6 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    // 視覺深度推理：強制二選一（莊/閒）+ 讀取總數/莊/和/閒
     private String callOpenAIAstra(String base64Image) throws Exception {
         URL url = new URL("https://api.openai.com/v1/chat/completions");
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -186,7 +196,6 @@ public class MainActivity extends AppCompatActivity {
 
         JSONArray contentArray = new JSONArray();
 
-        // 核心高勝率精算 Prompt：嚴禁觀望，每手必推莊或閒
         JSONObject textObj = new JSONObject();
         textObj.put("type", "text");
         String prompt = "你是具備大數據統計背景的職業百家樂路單視覺精算大師。\n" +
@@ -256,7 +265,6 @@ public class MainActivity extends AppCompatActivity {
                     int player = obj.optInt("player", 0);
                     int tie = obj.optInt("tie", 0);
 
-                    // 輸出格式：本局總數 / 莊 / 和 / 閒
                     String stats = String.format("總數: %d | 莊: %d | 和: %d | 閒: %d", total, banker, tie, player);
 
                     String js = String.format("window.__updateAI && window.__updateAI('%s', %d, '%s', '%s');",
@@ -297,26 +305,35 @@ public class MainActivity extends AppCompatActivity {
 
             "var hud = document.createElement('div');" +
             "hud.id = 'slot-assistant-hud';" +
-            "hud.style.cssText = 'position:fixed;top:45px;right:8px;width:215px;background:rgba(11,17,32,0.96);border:1px solid #38bdf8;border-radius:10px;z-index:999999;color:#f1f5f9;font-size:11px;box-shadow:0 8px 24px rgba(0,0,0,0.85);font-family:sans-serif;user-select:none;backdrop-filter:blur(6px);';" +
+            "hud.style.cssText = 'position:fixed;top:45px;right:8px;width:220px;background:rgba(11,17,32,0.96);border:1px solid #38bdf8;border-radius:10px;z-index:999999;color:#f1f5f9;font-size:11px;box-shadow:0 8px 24px rgba(0,0,0,0.85);font-family:sans-serif;user-select:none;backdrop-filter:blur(6px);';" +
             "hud.innerHTML = " +
                 "'<div id=\"hud_header\" style=\"padding:7px 10px;background:#1e293b;border-radius:10px 10px 0 0;font-weight:bold;color:#38bdf8;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #334155;cursor:move;touch-action:none;\">" +
                     "<span>👁 Astra 深度推論</span>" +
                     "<span id=\"hud_tog\" style=\"cursor:pointer;color:#94a3b8;font-size:10px;\">[收]</span>" +
                 "</div>' +" +
                 "'<div id=\"hud_content\" style=\"padding:8px;\">' +" +
-                    // 跨平台快捷導航 (包含 Google 首頁與各大真人娛樂)
-                    "'<div style=\"display:grid;grid-template-columns:1.2fr 1fr 1fr 1fr 1fr;gap:3px;margin-bottom:6px;\">" +
-                        "<button id=\"nav_gg\" style=\"background:#0f172a;border:1px solid #38bdf8;color:#38bdf8;padding:4px 0;border-radius:3px;font-size:9px;\">Google</button>" +
-                        "<button id=\"nav_mt\" style=\"background:#0f172a;border:1px solid #475569;color:#e2e8f0;padding:4px 0;border-radius:3px;font-size:9px;\">MT</button>" +
-                        "<button id=\"nav_dg\" style=\"background:#0f172a;border:1px solid #475569;color:#e2e8f0;padding:4px 0;border-radius:3px;font-size:9px;\">DG</button>" +
-                        "<button id=\"nav_sa\" style=\"background:#0f172a;border:1px solid #475569;color:#e2e8f0;padding:4px 0;border-radius:3px;font-size:9px;\">SA</button>" +
-                        "<button id=\"nav_allbet\" style=\"background:#0f172a;border:1px solid #475569;color:#e2e8f0;padding:4px 0;border-radius:3px;font-size:9px;\">歐博</button>" +
-                    "</div>' +" +
-                    // 預測展示區（莊/閒二選一）
+                    // 單一下拉式選單（整合原平台 + 新增 6 款遊戲）
+                    "'<div style=\"margin-bottom:6px;\">' +" +
+                        "'<select id=\"game_select\" style=\"width:100%;background:#0f172a;border:1px solid #38bdf8;color:#38bdf8;padding:5px 6px;border-radius:4px;font-size:10px;font-weight:bold;outline:none;\">' +" +
+                            "'<option value=\"\">⚡ 選擇遊戲 / 大廳切換 ⚡</option>' +" +
+                            "'<option value=\"google\">🌐 Google 首頁</option>' +" +
+                            "'<option value=\"lobby\">🏠 遊戲大廳列表</option>' +" +
+                            "'<option value=\"meta_all\">MT 百家樂</option>' +" +
+                            "'<option value=\"dg\">DG 百家樂</option>' +" +
+                            "'<option value=\"allbet\">歐博 百家樂</option>' +" +
+                            "'<option value=\"sa\">SA 真人 (SA LIVE)</option>' +" +
+                            "'<option value=\"bg\">BG 百家樂 (BG LIVE)</option>' +" +
+                            "'<option value=\"t9\">T9 百家樂 (T9 LIVE)</option>' +" +
+                            "'<option value=\"astar\">ASTAR 百家樂 (ASTAR LIVE)</option>' +" +
+                            "'<option value=\"gclub\">GCLUB 真人 (GCLUB LIVE)</option>' +" +
+                            "'<option value=\"pt\">PT 百家樂 (PT LIVE)</option>' +" +
+                        "'</select>' +" +
+                    "'</div>' +" +
+                    // 預測展示區（強制二選一）
                     "'<div style=\"background:rgba(15,23,42,0.85);border:1px solid #1e3a8a;border-radius:6px;padding:6px 4px;text-align:center;margin-bottom:6px;\">" +
                         "<div style=\"font-size:10px;color:#94a3b8;\">🎯 深度路單精算建議</div>" +
                         "<div id=\"ai_pick_target\" style=\"font-size:18px;font-weight:900;color:#ef4444;margin:2px 0;\">待命中</div>" +
-                        "<div id=\"ai_pick_desc\" style=\"font-size:9px;color:#38bdf8;line-height:1.2;\">點擊下方按鈕開始大路與下三路分析</div>" +
+                        "<div id=\"ai_pick_desc\" style=\"font-size:9px;color:#38bdf8;line-height:1.2;\">請進入牌桌後點擊下方按鈕</div>" +
                     "</div>' +" +
                     // 底欄即時顯示：本局總數 / 莊 / 和 / 閒
                     "'<div id=\"hud_stats_box\" style=\"background:#0f172a;border:1px dashed #334155;border-radius:4px;padding:4px;text-align:center;font-size:10px;color:#38bdf8;margin-bottom:6px;\">" +
@@ -330,12 +347,13 @@ public class MainActivity extends AppCompatActivity {
             "var header = document.getElementById('hud_header');" +
             "var isDrag = false, sX, sY, iL, iT;" +
             "header.addEventListener('touchstart', function(e) {" +
-            "  if (e.target.closest('#hud_tog')) return;" +
+            "  if (e.target.closest('#hud_tog') || e.target.closest('select')) return;" +
             "  isDrag = true; var t = e.touches[0]; var r = hud.getBoundingClientRect();" +
             "  sX = t.clientX; sY = t.clientY; iL = r.left; iT = r.top;" +
             "}, { passive: true });" +
             "header.addEventListener('touchmove', function(e) {" +
-            "  if (!isDrag) return; var t = e.touches[0];" +
+            "  if (!isDrag) return;" +
+            "  var t = e.touches[0];" +
             "  hud.style.left = Math.max(0, Math.min(iL + (t.clientX - sX), window.innerWidth - hud.offsetWidth)) + 'px';" +
             "  hud.style.top = Math.max(0, Math.min(iT + (t.clientY - sY), window.innerHeight - hud.offsetHeight)) + 'px';" +
             "  hud.style.right = 'auto';" +
@@ -350,16 +368,63 @@ public class MainActivity extends AppCompatActivity {
             "  else { cnt.style.display = 'none'; tog.innerText = '[展]'; }" +
             "});" +
 
-            // 平台切換跳轉
+            // 快捷跳轉通道
             "function safeNav(url) {" +
             "  if (window.AndroidBridge && window.AndroidBridge.switchGame) window.AndroidBridge.switchGame(url);" +
             "  else location.href = url;" +
             "}" +
-            "bindTap(document.getElementById('nav_gg'), function() { safeNav('https://www.google.com'); });" +
-            "bindTap(document.getElementById('nav_mt'), function() { safeNav('https://www.osc169.com/#/game/play?game_name=meta_all&game_type=3&device=mobile'); });" +
-            "bindTap(document.getElementById('nav_dg'), function() { safeNav('https://www.osc169.com/#/game/play?game_name=dg&game_type=3&device=mobile'); });" +
-            "bindTap(document.getElementById('nav_sa'), function() { safeNav('https://www.osc169.com/#/game/play?game_name=sa&game_type=3&device=mobile'); });" +
-            "bindTap(document.getElementById('nav_allbet'), function() { safeNav('https://www.osc169.com/#/game/play?game_name=allbet&game_type=3&device=mobile'); });" +
+
+            // 核心切換處理（支援原生卡片點擊，修復 SA 等廠商 Token 遺失問題）
+            "function triggerGameSwitch(key) {" +
+            "  if (!key) return;" +
+            "  if (key === 'google') { safeNav('https://www.google.com'); return; }" +
+            "  if (key === 'lobby') { safeNav('https://www.osc169.com/#/game'); return; }" +
+
+            "  var kwMap = {" +
+            "    'sa': ['SA', 'SA真人', 'SA LIVE', 'SAGAMING']," +
+            "    'bg': ['BG', 'BG LIVE', 'BG百家樂']," +
+            "    't9': ['T9', 'T9 LIVE', 'T9百家樂']," +
+            "    'astar': ['ASTAR', 'ASTAR LIVE', 'ASTAR百家樂']," +
+            "    'gclub': ['GCLUB', 'GCLUB LIVE', 'GCLUB真人']," +
+            "    'pt': ['PT', 'PT LIVE', 'PT百家樂']," +
+            "    'meta_all': ['MT', 'META', 'MT百家樂']," +
+            "    'dg': ['DG', 'DG百家樂']," +
+            "    'allbet': ['歐博', 'ALLBET']" +
+            "  };" +
+
+            "  var keywords = kwMap[key] || [key];" +
+            "  var clicked = false;" +
+
+            // 若當前在遊戲大廳列表，優先模擬點擊卡片（保證走官方原生認證 Token）
+            "  var els = document.querySelectorAll('div, a, span, p, img');" +
+            "  for (var i = 0; i < els.length; i++) {" +
+            "    var el = els[i];" +
+            "    var txt = (el.innerText || el.getAttribute('alt') || '').trim().toUpperCase();" +
+            "    for (var k = 0; k < keywords.length; k++) {" +
+            "      if (txt === keywords[k] || txt.indexOf(keywords[k]) !== -1) {" +
+            "        var target = el.closest('a, [onclick], div[class*=\"card\"], div[class*=\"item\"]') || el;" +
+            "        target.click();" +
+            "        clicked = true;" +
+            "        break;" +
+            "      }" +
+            "    }" +
+            "    if (clicked) break;" +
+            "  }" +
+
+            // 若不在大廳，改走 Hash 網址跳轉
+            "  if (!clicked) {" +
+            "    var code = (key === 'sa') ? 'sagaming' : key;" +
+            "    safeNav('https://www.osc169.com/#/game/play?game_name=' + code + '&game_type=3&device=mobile');" +
+            "  }" +
+            "}" +
+
+            // 下拉選單監聽
+            "var sel = document.getElementById('game_select');" +
+            "sel.addEventListener('change', function() {" +
+            "  var val = sel.value;" +
+            "  triggerGameSwitch(val);" +
+            "  sel.value = '';" + // 重置選單狀態以便下次選擇
+            "});" +
 
             // 觸發視覺辨識
             "var btnDo = document.getElementById('btn_do_ai');" +
