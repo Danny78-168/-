@@ -190,6 +190,12 @@ public class MainActivity extends AppCompatActivity {
         webView.setWebChromeClient(new WebChromeClient());
         webView.setWebViewClient(new WebViewClient() {
             @Override
+            public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                view.loadUrl(url);
+                return true;
+            }
+
+            @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 etUrlInput.setText(url);
@@ -299,12 +305,24 @@ public class MainActivity extends AppCompatActivity {
 
         JSONObject textObj = new JSONObject();
         textObj.put("type", "text");
-        String prompt = "你是頂尖百家樂路單精算大師。請精確觀察圖片下半部路單統計列與大路最右側最新落點：\n" +
-                "1. 提取統計：total(總數)、banker(莊/紅)、player(閒/藍)、tie(和/綠)。\n" +
-                "2. 嚴格鎖定大路最右側最新一列！嚴禁把圖表左側歷史長龍當成當前走勢！若最右側僅1顆藍，屬單跳或轉向，絕不可稱長龍順延！\n" +
-                "3. 嚴禁輸出觀望！必須二選一強制輸出莊或閒，conf介於72%~91%。\n" +
-                "輸出標準JSON格式：\n" +
-                "{\"total\":30,\"banker\":16,\"player\":12,\"tie\":2,\"pick\":\"閒\",\"conf\":80,\"reason\":\"大路最新落點出閒破龍轉向，下三路合流齊腳\"}";
+
+        // 🌟 跨廳自適應提取 Prompt（支援 DG、DB、AE Sexy、PT 等所有排版）
+        String prompt = "你是頂尖百家樂路單視覺精算大師。請精準解析圖片下半部的路單與統計數據：\n\n" +
+                "【任務一：全廳通用數據提取（請依畫面實際排版判斷）】\n" +
+                "請在路單上方或下方尋找數據列，依據以下特徵提取：\n" +
+                "1. 庄/莊 (banker)：紅圈或標有「庄/莊/B」旁的數字。\n" +
+                "2. 闲/閒 (player)：藍圈或標有「闲/閒/P」旁的數字。\n" +
+                "3. 和 (tie)：綠圈或標有「和/T」旁的數字。\n" +
+                "4. 總數 (total)：\n" +
+                "   - 若有「总/總/#」標籤，直接讀取其數值（如 DG 寫在最右邊『总 33』）。\n" +
+                "   - 若最左側為無標籤的大數字，該數字即為總數（如 DB 的『40 13 26 1』）。\n" +
+                "   - 若畫面未印總數（如 AE Sexy 僅有『庄 20 闲 22 和 4』），則自動加總：total = 庄 + 闲 + 和 (20+22+4=46)！\n\n" +
+                "【任務二：客觀大路走向分析】\n" +
+                "1. 嚴格鎖定大路【最右側最新一列】！上一列若是紅、最新這列只有1顆藍，屬【單跳/轉向】，絕不可胡扯為連莊！\n" +
+                "2. 嚴禁輸出觀望！必須強制二選一輸出【莊】或【閒】。conf 介於 72%~91%。\n\n" +
+                "輸出標準純 JSON：\n" +
+                "{\"total\":33,\"banker\":13,\"player\":18,\"tie\":2,\"pick\":\"莊\",\"conf\":82,\"reason\":\"大路最新落點出閒轉向，下三路合流齊腳\"}";
+
         textObj.put("text", prompt);
         contentArray.put(textObj);
 
@@ -435,7 +453,7 @@ public class MainActivity extends AppCompatActivity {
         sb.append("    h += '</div>';");
         sb.append("    h += '</div>';");
         sb.append("    h += '</div>';");
-        sb.append("    hud.innerHTML = h;");
+        hud.innerHTML = h;
         sb.append("    document.body.appendChild(hud);");
         sb.append("    var header = document.getElementById('hud_header');");
         sb.append("    var isDrag = false, sX, sY, iL, iT;");
@@ -489,7 +507,7 @@ public class MainActivity extends AppCompatActivity {
         sb.append("      var t = document.getElementById('ai_pick_target');");
         sb.append("      var d = document.getElementById('ai_pick_desc');");
         sb.append("      if (t) { t.innerText = '分析中...'; t.style.color = '#facc15'; }");
-        sb.append("      if (d) { d.innerText = '正在定位最右側最新一列...'; }");
+        sb.append("      if (d) { d.innerText = '正在定位最新落點與排版數據...'; }");
         sb.append("      if (window.AndroidBridge && window.AndroidBridge.requestVisualAnalysis) {");
         sb.append("        window.AndroidBridge.requestVisualAnalysis();");
         sb.append("      }");
