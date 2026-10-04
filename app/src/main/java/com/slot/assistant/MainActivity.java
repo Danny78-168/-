@@ -22,11 +22,13 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
+import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
+import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -173,7 +175,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     // ==========================================
-    //   核心懸浮服務：支援右下角自由拖曳縮放視窗大小
+    //   核心懸浮服務：含下拉式選單與生效按鈕
     // ==========================================
     public static class FloatingService extends Service {
 
@@ -188,6 +190,21 @@ public class MainActivity extends AppCompatActivity {
         private String selectedModel = "gpt-6-astra";
         private boolean isVip = false;
 
+        private final String[] modelKeys = new String[]{
+                "gpt-4o",
+                "gpt-6-astra",
+                "gpt-6.1-sol",
+                "gpt-6-luna"
+        };
+
+        private final String[] modelDisplayNames = new String[]{
+                "gpt-4o (一般版標準)",
+                "👑 gpt-6-astra (VIP視覺旗艦)",
+                "🧠 gpt-6.1-sol (VIP深度推理)",
+                "⚡ gpt-6-luna (VIP即時捕捉)"
+        };
+
+        private Spinner spinnerModel;
         private TextView tvVipBadge;
         private TextView tvVipAction;
         private TextView tvStatusBig;
@@ -196,7 +213,6 @@ public class MainActivity extends AppCompatActivity {
         private TextView tvDragon7;
         private TextView tvTie;
         private TextView tvPairs;
-        private Button btnModel4o, btnModelAstra, btnModelSol, btnModelLuna;
 
         private final Handler mainHandler = new Handler(Looper.getMainLooper());
         private SharedPreferences prefs;
@@ -234,7 +250,6 @@ public class MainActivity extends AppCompatActivity {
             params.gravity = Gravity.TOP | Gravity.CENTER_HORIZONTAL;
             params.y = dp(100);
 
-            // 根佈局：採用 FrameLayout 包覆卡片與右下角的拖曳縮放手柄
             FrameLayout rootFrame = new FrameLayout(this);
 
             LinearLayout card = new LinearLayout(this);
@@ -267,7 +282,6 @@ public class MainActivity extends AppCompatActivity {
             titleBar.addView(btnCollapse);
             card.addView(titleBar);
 
-            // 頂部列：支援按住移動位置
             titleBar.setOnTouchListener(new View.OnTouchListener() {
                 private int initX, initY;
                 private float touchX, touchY;
@@ -288,12 +302,11 @@ public class MainActivity extends AppCompatActivity {
                 }
             });
 
-            // 快捷縮放按鈕
             btnMinus.setOnClickListener(v -> scaleWindow(0.9f));
             btnPlus.setOnClickListener(v -> scaleWindow(1.1f));
             btnCollapse.setOnClickListener(v -> toggleMinimize(true));
 
-            // 2. 內部可捲動區域 (避免縮小視窗時組件被切斷)
+            // 2. 內部可捲動內容
             ScrollView innerScroll = new ScrollView(this);
             innerScroll.setFillViewport(true);
             LinearLayout.LayoutParams scrollLp = new LinearLayout.LayoutParams(
@@ -326,30 +339,67 @@ public class MainActivity extends AppCompatActivity {
 
             tvVipAction.setOnClickListener(v -> toggleVipState());
 
-            // 模型選擇按鈕列
-            LinearLayout modelSelector = new LinearLayout(this);
-            modelSelector.setOrientation(LinearLayout.HORIZONTAL);
-            modelSelector.setPadding(0, dp(6), 0, dp(6));
+            // ========================================================
+            // 3. 模型切換：下拉式選單 (Spinner) + 生效按鈕
+            // ========================================================
+            LinearLayout modelSelectorRow = new LinearLayout(this);
+            modelSelectorRow.setOrientation(LinearLayout.HORIZONTAL);
+            modelSelectorRow.setGravity(Gravity.CENTER_VERTICAL);
+            modelSelectorRow.setPadding(0, dp(6), 0, dp(6));
 
-            btnModel4o = createModelBtn("4o");
-            btnModelAstra = createModelBtn("👑 Astra");
-            btnModelSol = createModelBtn("🧠 Sol");
-            btnModelLuna = createModelBtn("⚡ Luna");
+            spinnerModel = new Spinner(new androidx.appcompat.view.ContextThemeWrapper(this, androidx.appcompat.R.style.Theme_AppCompat_Dark));
+            spinnerModel.setBackground(createBoxDrawable(Color.parseColor("#1E293B"), Color.parseColor("#334155"), 6));
+            spinnerModel.setPadding(dp(8), dp(4), dp(8), dp(4));
 
-            modelSelector.addView(btnModel4o, new LinearLayout.LayoutParams(0, dp(32), 1f));
-            modelSelector.addView(btnModelAstra, new LinearLayout.LayoutParams(0, dp(32), 1.2f));
-            modelSelector.addView(btnModelSol, new LinearLayout.LayoutParams(0, dp(32), 1.1f));
-            modelSelector.addView(btnModelLuna, new LinearLayout.LayoutParams(0, dp(32), 1.1f));
-            scrollContent.addView(modelSelector);
+            ArrayAdapter<String> spinnerAdapter = new ArrayAdapter<String>(this, android.R.layout.simple_spinner_item, modelDisplayNames) {
+                @Override
+                public View getView(int position, View convertView, ViewGroup parent) {
+                    View v = super.getView(position, convertView, parent);
+                    if (v instanceof TextView) {
+                        ((TextView) v).setTextColor(Color.WHITE);
+                        ((TextView) v).setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+                        ((TextView) v).setTypeface(null, Typeface.BOLD);
+                    }
+                    return v;
+                }
 
-            updateModelBtnState();
+                @Override
+                public View getDropDownView(int position, View convertView, ViewGroup parent) {
+                    View v = super.getDropDownView(position, convertView, parent);
+                    v.setBackgroundColor(Color.parseColor("#1E293B"));
+                    if (v instanceof TextView) {
+                        ((TextView) v).setTextColor(Color.WHITE);
+                        ((TextView) v).setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+                        ((TextView) v).setPadding(dp(12), dp(12), dp(12), dp(12));
+                    }
+                    return v;
+                }
+            };
+            spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
+            spinnerModel.setAdapter(spinnerAdapter);
 
-            btnModel4o.setOnClickListener(v -> switchModel("gpt-4o"));
-            btnModelAstra.setOnClickListener(v -> switchModel("gpt-6-astra"));
-            btnModelSol.setOnClickListener(v -> switchModel("gpt-6.1-sol"));
-            btnModelLuna.setOnClickListener(v -> switchModel("gpt-6-luna"));
+            // 預設選中當前啟用的模型 (gpt-6-astra 為第 1 項)
+            spinnerModel.setSelection(1);
 
-            // 重置與說明
+            LinearLayout.LayoutParams spLp = new LinearLayout.LayoutParams(0, dp(38), 1f);
+            modelSelectorRow.addView(spinnerModel, spLp);
+
+            // 生效按鈕
+            Button btnApplyModel = new Button(this);
+            btnApplyModel.setText("生效");
+            btnApplyModel.setTextColor(Color.WHITE);
+            btnApplyModel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+            btnApplyModel.setTypeface(null, Typeface.BOLD);
+            btnApplyModel.setBackground(createBoxDrawable(Color.parseColor("#0284C7"), Color.parseColor("#38BDF8"), 6));
+            LinearLayout.LayoutParams applyLp = new LinearLayout.LayoutParams(dp(62), dp(38));
+            applyLp.setMargins(dp(6), 0, 0, 0);
+            modelSelectorRow.addView(btnApplyModel, applyLp);
+
+            scrollContent.addView(modelSelectorRow);
+
+            btnApplyModel.setOnClickListener(v -> applySelectedModel());
+
+            // 4. 重置與說明
             LinearLayout actRow = new LinearLayout(this);
             actRow.setOrientation(LinearLayout.HORIZONTAL);
             actRow.setPadding(0, dp(2), 0, dp(8));
@@ -368,7 +418,7 @@ public class MainActivity extends AppCompatActivity {
             btnReset.setOnClickListener(v -> resetCard());
             btnHelp.setOnClickListener(v -> Toast.makeText(this, "請打開路單畫面，點擊下方「AI辨識」進行即時運算！", Toast.LENGTH_LONG).show());
 
-            // 核心路單建議面板 (含四大機率)
+            // 5. 核心路單建議面板 (含四大機率)
             LinearLayout decisionCard = new LinearLayout(this);
             decisionCard.setOrientation(LinearLayout.VERTICAL);
             decisionCard.setBackground(createBoxDrawable(Color.parseColor("#080D1A"), Color.parseColor("#1E293B"), 8));
@@ -416,7 +466,7 @@ public class MainActivity extends AppCompatActivity {
 
             scrollContent.addView(decisionCard);
 
-            // AI 辨識大按鈕
+            // 6. AI 辨識大按鈕
             Button btnAiScan = new Button(this);
             btnAiScan.setText("📸 截圖畫面並由 AI 辨識");
             btnAiScan.setTextColor(Color.WHITE);
@@ -429,7 +479,7 @@ public class MainActivity extends AppCompatActivity {
 
             btnAiScan.setOnClickListener(v -> executeAiInference());
 
-            // 狀態列
+            // 7. 狀態列
             LinearLayout statusRow = new LinearLayout(this);
             statusRow.setOrientation(LinearLayout.HORIZONTAL);
             statusRow.setPadding(dp(4), 0, dp(4), dp(6));
@@ -447,11 +497,11 @@ public class MainActivity extends AppCompatActivity {
             statusRow.addView(tvConn);
             scrollContent.addView(statusRow);
 
-            // 官方頻道支援按鈕
+            // 8. 官方頻道支援按鈕
             Button btnTechSupport = createFlatBtn("💬 技術支援: @OSC168", Color.parseColor("#16A34A"));
             Button btnOfficialTg = createFlatBtn("🗡 官方頻道: @TG_APK1", Color.parseColor("#0284C7"));
             LinearLayout.LayoutParams tgLp1 = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(34));
-            LinearLayout.LayoutParams tgLp2 = new LinearLayout.LayoutParams(LinearLayout.Layout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(34));
+            LinearLayout.LayoutParams tgLp2 = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(34));
             tgLp2.setMargins(0, dp(4), 0, dp(6));
 
             scrollContent.addView(btnTechSupport, tgLp1);
@@ -460,7 +510,7 @@ public class MainActivity extends AppCompatActivity {
             btnTechSupport.setOnClickListener(v -> openLink("https://t.me/OSC168"));
             btnOfficialTg.setOnClickListener(v -> openLink("https://t.me/TG_APK1"));
 
-            // 免責標籤
+            // 9. 免責標籤
             TextView tvAge = new TextView(this);
             tvAge.setText("🔞 未滿 18 歲禁止使用");
             tvAge.setTextColor(Color.parseColor("#EF4444"));
@@ -476,9 +526,7 @@ public class MainActivity extends AppCompatActivity {
             tvDisclaimer.setPadding(0, dp(2), 0, 0);
             scrollContent.addView(tvDisclaimer);
 
-            // ========================================================
-            // 3. 右下角手勢縮放按鈕 (天藍色三角形角標 ◢)
-            // ========================================================
+            // 10. 右下角手勢縮放按鈕 (天藍色三角形角標 ◢)
             TextView resizeHandle = new TextView(this);
             resizeHandle.setText("◢");
             resizeHandle.setTextColor(Color.parseColor("#38BDF8"));
@@ -491,7 +539,6 @@ public class MainActivity extends AppCompatActivity {
             resizeLp.gravity = Gravity.BOTTOM | Gravity.END;
             rootFrame.addView(resizeHandle, resizeLp);
 
-            // 按住右下角角標手勢自由拖曳縮放視窗大小
             resizeHandle.setOnTouchListener(new View.OnTouchListener() {
                 private int startW, startH;
                 private float touchStartX, touchStartY;
@@ -534,6 +581,28 @@ public class MainActivity extends AppCompatActivity {
 
             floatingView = rootFrame;
             windowManager.addView(floatingView, params);
+        }
+
+        private void applySelectedModel() {
+            int pos = spinnerModel.getSelectedItemPosition();
+            if (pos < 0 || pos >= modelKeys.length) return;
+
+            String targetModel = modelKeys[pos];
+
+            if (!targetModel.equals("gpt-4o") && !isVip) {
+                Toast.makeText(this, "🔒 此為 VIP 專屬高階引擎！請先輸入金鑰 OSC-ADMIN-8888 解鎖", Toast.LENGTH_SHORT).show();
+                // 恢復為當前生效之模型選項
+                for (int i = 0; i < modelKeys.length; i++) {
+                    if (modelKeys[i].equals(selectedModel)) {
+                        spinnerModel.setSelection(i);
+                        break;
+                    }
+                }
+                return;
+            }
+
+            this.selectedModel = targetModel;
+            Toast.makeText(this, "✅ 引擎設定已生效: " + targetModel, Toast.LENGTH_SHORT).show();
         }
 
         private void scaleWindow(float factor) {
@@ -598,33 +667,9 @@ public class MainActivity extends AppCompatActivity {
             tvVipAction.setText(isVip ? "[註銷]" : "[解鎖]");
             if (!isVip && !selectedModel.equals("gpt-4o")) {
                 selectedModel = "gpt-4o";
+                spinnerModel.setSelection(0);
             }
-            updateModelBtnState();
             Toast.makeText(this, isVip ? "VIP 模式已啟用！已解鎖 ASTRA/SOL/LUNA" : "已註銷，切回一般版", Toast.LENGTH_SHORT).show();
-        }
-
-        private void switchModel(String model) {
-            if (!model.equals("gpt-4o") && !isVip) {
-                Toast.makeText(this, "此模型為 VIP 專屬！請先輸入金鑰 OSC-ADMIN-8888", Toast.LENGTH_SHORT).show();
-                return;
-            }
-            this.selectedModel = model;
-            updateModelBtnState();
-            Toast.makeText(this, "已切換至引擎: " + model, Toast.LENGTH_SHORT).show();
-        }
-
-        private void updateModelBtnState() {
-            setBtnStyle(btnModel4o, selectedModel.equals("gpt-4o"));
-            setBtnStyle(btnModelAstra, selectedModel.equals("gpt-6-astra"));
-            setBtnStyle(btnModelSol, selectedModel.equals("gpt-6.1-sol"));
-            setBtnStyle(btnModelLuna, selectedModel.equals("gpt-6-luna"));
-        }
-
-        private void setBtnStyle(Button btn, boolean isSel) {
-            btn.setBackground(createBoxDrawable(
-                    isSel ? Color.parseColor("#0284C7") : Color.parseColor("#1E293B"),
-                    isSel ? Color.parseColor("#38BDF8") : Color.parseColor("#334155"), 4));
-            btn.setTextColor(isSel ? Color.WHITE : Color.parseColor("#94A3B8"));
         }
 
         private void resetCard() {
@@ -781,14 +826,6 @@ public class MainActivity extends AppCompatActivity {
             tv.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
             tv.setGravity(Gravity.CENTER);
             return tv;
-        }
-
-        private Button createModelBtn(String txt) {
-            Button btn = new Button(this);
-            btn.setText(txt);
-            btn.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
-            btn.setPadding(0, 0, 0, 0);
-            return btn;
         }
 
         private Button createOutlineBtn(String txt) {
