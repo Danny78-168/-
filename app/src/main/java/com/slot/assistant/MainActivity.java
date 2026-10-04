@@ -31,17 +31,27 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // 1. 根佈局
+        // 1. 取得手機狀態列實際高度，避免頂部按鈕被時間、電量覆蓋
+        int statusBarHeight = 0;
+        int resourceId = getResources().getIdentifier("status_bar_height", "dimen", "android");
+        if (resourceId > 0) {
+            statusBarHeight = getResources().getDimensionPixelSize(resourceId);
+        }
+        if (statusBarHeight <= 0) {
+            statusBarHeight = dp(32);
+        }
+
+        // 2. 根佈局
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundColor(Color.parseColor("#0B1120"));
 
-        // 2. 頂部網址列（包含網址輸入框、重新整理按鈕、前往按鈕）
+        // 3. 頂部網址列（加入頂部狀態列安全距離）
         LinearLayout topBar = new LinearLayout(this);
         topBar.setOrientation(LinearLayout.HORIZONTAL);
         topBar.setBackgroundColor(Color.parseColor("#0F172A"));
         topBar.setGravity(Gravity.CENTER_VERTICAL);
-        topBar.setPadding(dp(10), dp(8), dp(10), dp(8));
+        topBar.setPadding(dp(10), statusBarHeight + dp(6), dp(10), dp(10));
 
         etUrl = new EditText(this);
         etUrl.setText("https://www.google.com/");
@@ -55,7 +65,7 @@ public class MainActivity extends AppCompatActivity {
         LinearLayout.LayoutParams etParams = new LinearLayout.LayoutParams(0, dp(38), 1f);
         topBar.addView(etUrl, etParams);
 
-        // 新增：重新整理按鈕
+        // 重新整理按鈕
         Button btnRefresh = new Button(this);
         btnRefresh.setText("重新整理");
         btnRefresh.setTextColor(Color.WHITE);
@@ -79,7 +89,7 @@ public class MainActivity extends AppCompatActivity {
 
         root.addView(topBar);
 
-        // 3. WebView 容器
+        // 4. WebView 容器
         webView = new WebView(this);
         LinearLayout.LayoutParams webParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
@@ -121,14 +131,10 @@ public class MainActivity extends AppCompatActivity {
 
         webView.setWebChromeClient(new WebChromeClient());
 
-        // 點擊「重新整理」
         btnRefresh.setOnClickListener(v -> {
-            if (webView != null) {
-                webView.reload();
-            }
+            if (webView != null) webView.reload();
         });
 
-        // 點擊「前往」
         btnGo.setOnClickListener(v -> {
             String url = etUrl.getText().toString().trim();
             if (!url.isEmpty()) {
@@ -167,19 +173,31 @@ public class MainActivity extends AppCompatActivity {
                 + "  var root = document.documentElement || document.body;"
                 + "  if (!root) return;"
                 + ""
+                + "  function bindTap(el, fn) {"
+                + "    if (!el) return;"
+                + "    var moved = false;"
+                + "    el.addEventListener('touchstart', function(e) { moved = false; e.stopPropagation(); }, { passive: true });"
+                + "    el.addEventListener('touchmove', function(e) { moved = true; }, { passive: true });"
+                + "    el.addEventListener('touchend', function(e) {"
+                + "      e.stopPropagation();"
+                + "      if (!moved) { e.preventDefault(); fn(); }"
+                + "    });"
+                + "    el.addEventListener('click', function(e) { e.stopPropagation(); fn(); });"
+                + "  }"
+                + ""
                 + "  var hud = document.createElement('div');"
                 + "  hud.id = 'astra-hud-container';"
-                + "  hud.style.cssText = 'position:fixed;top:90px;right:14px;width:235px;background:rgba(11,17,32,0.96);border:1.5px solid #38bdf8;border-radius:10px;z-index:2147483647;color:#f1f5f9;font-size:11px;box-shadow:0 8px 30px rgba(0,0,0,0.9);font-family:sans-serif;user-select:none;-webkit-user-select:none;backdrop-filter:blur(8px);display:flex;flex-direction:column;overflow:hidden;';"
+                + "  hud.style.cssText = 'position:fixed;top:100px;right:14px;width:235px;background:rgba(11,17,32,0.96);border:1.5px solid #38bdf8;border-radius:10px;z-index:2147483647;color:#f1f5f9;font-size:11px;box-shadow:0 8px 30px rgba(0,0,0,0.9);font-family:sans-serif;user-select:none;-webkit-user-select:none;backdrop-filter:blur(8px);display:flex;flex-direction:column;overflow:hidden;touch-action:manipulation;';"
                 + ""
                 + "  hud.innerHTML = "
-                + "    '<div id=\"hud_header\" style=\"padding:7px 9px;background:#1e293b;border-radius:9px 9px 0 0;font-weight:bold;color:#38bdf8;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #334155;cursor:move;touch-action:none;\">' +"
+                + "    '<div id=\"hud_header\" style=\"padding:8px 10px;background:#1e293b;border-radius:9px 9px 0 0;font-weight:bold;color:#38bdf8;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #334155;cursor:move;touch-action:none;\">' +"
                 + "      '<span id=\"hud_title\">👁 Astra 深度推論</span>' +"
-                + "      '<span id=\"hud_collapse\" style=\"cursor:pointer;color:#38bdf8;font-size:11px;font-weight:bold;\">[收]</span>' +"
+                + "      '<span id=\"hud_collapse\" style=\"cursor:pointer;color:#38bdf8;font-size:12px;font-weight:bold;padding:2px 6px;\">[收]</span>' +"
                 + "    '</div>' +"
                 + "    '<div id=\"hud_body\">' +"
                 + "      '<div style=\"display:flex;border-bottom:1px solid #334155;background:#0f172a;\">' +"
-                + "        '<div id=\"tab_ai\" style=\"flex:1;text-align:center;padding:6px 0;font-size:11px;font-weight:bold;color:#38bdf8;border-bottom:2px solid #38bdf8;cursor:pointer;\">🎯 AI 精算</div>' +"
-                + "        '<div id=\"tab_service\" style=\"flex:1;text-align:center;padding:6px 0;font-size:11px;font-weight:bold;color:#94a3b8;border-bottom:2px solid transparent;cursor:pointer;\">💬 反饋客服</div>' +"
+                + "        '<div id=\"tab_ai\" style=\"flex:1;text-align:center;padding:8px 0;font-size:11px;font-weight:bold;color:#38bdf8;border-bottom:2px solid #38bdf8;cursor:pointer;\">🎯 AI 精算</div>' +"
+                + "        '<div id=\"tab_service\" style=\"flex:1;text-align:center;padding:8px 0;font-size:11px;font-weight:bold;color:#94a3b8;border-bottom:2px solid transparent;cursor:pointer;\">💬 反饋客服</div>' +"
                 + "      '</div>' +"
                 + "      '<div id=\"panel_ai\" style=\"padding:10px 8px 12px 8px;\">' +"
                 + "        '<div style=\"background:rgba(15,23,42,0.9);border:1px solid #3b82f6;border-radius:6px;padding:8px 4px;text-align:center;margin-bottom:8px;\">' +"
@@ -190,15 +208,16 @@ public class MainActivity extends AppCompatActivity {
                 + "        '<div style=\"background:#080d1a;border:1px solid #1e293b;border-radius:4px;padding:5px 0;text-align:center;margin-bottom:8px;\">' +"
                 + "          '<span id=\"ai_stats_line\" style=\"font-size:10px;color:#64748b;\">總數: -- | 莊: -- | 和: -- | 閒: --</span>' +"
                 + "        '</div>' +"
-                + "        '<button id=\"btn_scan_ai\" style=\"width:100%;background:#2563eb;color:#fff;border:none;padding:8px 0;border-radius:6px;font-weight:bold;font-size:11px;cursor:pointer;box-shadow:0 2px 8px rgba(37,99,235,0.4);\">📸 截圖畫面並由 AI 辨識</button>' +"
+                + "        '<button id=\"btn_scan_ai\" style=\"width:100%;background:#2563eb;color:#fff;border:none;padding:9px 0;border-radius:6px;font-weight:bold;font-size:11px;cursor:pointer;box-shadow:0 2px 8px rgba(37,99,235,0.4);\">📸 截圖畫面並由 AI 辨識</button>' +"
                 + "      '</div>' +"
                 + "      '<div id=\"panel_service\" style=\"padding:10px 8px 12px 8px;display:none;flex-direction:column;gap:6px;\">' +"
-                + "        '<button id=\"btn_tg_cs\" style=\"width:100%;background:#0284c7;color:#fff;border:none;padding:7px 0;border-radius:4px;font-size:10px;font-weight:bold;cursor:pointer;\">✈ Telegram: @TG_APK1</button>' +"
-                + "        '<button id=\"btn_line_cs\" style=\"width:100%;background:#16a34a;color:#fff;border:none;padding:7px 0;border-radius:4px;font-size:10px;font-weight:bold;cursor:pointer;\">💬 LINE 客服: @OSC168</button>' +"
+                + "        '<button id=\"btn_tg_cs\" style=\"width:100%;background:#0284c7;color:#fff;border:none;padding:8px 0;border-radius:4px;font-size:10px;font-weight:bold;cursor:pointer;\">✈ Telegram: @TG_APK1</button>' +"
+                + "        '<button id=\"btn_line_cs\" style=\"width:100%;background:#16a34a;color:#fff;border:none;padding:8px 0;border-radius:4px;font-size:10px;font-weight:bold;cursor:pointer;\">💬 LINE 客服: @OSC168</button>' +"
                 + "      '</div>' +"
                 + "    '</div>';"
                 + "  root.appendChild(hud);"
                 + ""
+                + "  // 懸浮窗拖曳處理"
                 + "  var header = document.getElementById('hud_header');"
                 + "  var isDrag = false, startX, startY, initLeft, initTop;"
                 + "  header.addEventListener('touchstart', function(e) {"
@@ -217,11 +236,11 @@ public class MainActivity extends AppCompatActivity {
                 + "  }, { passive: false });"
                 + "  header.addEventListener('touchend', function() { isDrag = false; });"
                 + ""
+                + "  // 收合 / 展開綁定"
                 + "  var colBtn = document.getElementById('hud_collapse');"
                 + "  var body = document.getElementById('hud_body');"
                 + "  var title = document.getElementById('hud_title');"
-                + "  colBtn.addEventListener('click', function(e) {"
-                + "    e.stopPropagation();"
+                + "  bindTap(colBtn, function() {"
                 + "    if (body.style.display === 'none') {"
                 + "      body.style.display = 'block';"
                 + "      hud.style.width = '235px';"
@@ -235,30 +254,33 @@ public class MainActivity extends AppCompatActivity {
                 + "    }"
                 + "  });"
                 + ""
+                + "  // 分頁切換綁定"
                 + "  var tabAi = document.getElementById('tab_ai');"
                 + "  var tabService = document.getElementById('tab_service');"
                 + "  var panelAi = document.getElementById('panel_ai');"
                 + "  var panelService = document.getElementById('panel_service');"
-                + "  tabAi.addEventListener('click', function() {"
+                + "  bindTap(tabAi, function() {"
                 + "    tabAi.style.color = '#38bdf8'; tabAi.style.borderBottom = '2px solid #38bdf8';"
                 + "    tabService.style.color = '#94a3b8'; tabService.style.borderBottom = '2px solid transparent';"
                 + "    panelAi.style.display = 'block'; panelService.style.display = 'none';"
                 + "  });"
-                + "  tabService.addEventListener('click', function() {"
+                + "  bindTap(tabService, function() {"
                 + "    tabService.style.color = '#38bdf8'; tabService.style.borderBottom = '2px solid #38bdf8';"
                 + "    tabAi.style.color = '#94a3b8'; tabAi.style.borderBottom = '2px solid transparent';"
                 + "    panelService.style.display = 'flex'; panelAi.style.display = 'none';"
                 + "  });"
                 + ""
-                + "  document.getElementById('btn_tg_cs').addEventListener('click', function() {"
+                + "  // 客服按鈕綁定"
+                + "  bindTap(document.getElementById('btn_tg_cs'), function() {"
                 + "    if (window.AndroidBridge) window.AndroidBridge.openExternalUrl('https://t.me/TG_APK1');"
                 + "  });"
-                + "  document.getElementById('btn_line_cs').addEventListener('click', function() {"
+                + "  bindTap(document.getElementById('btn_line_cs'), function() {"
                 + "    if (window.AndroidBridge) window.AndroidBridge.openExternalUrl('https://lin.ee/NfoQ9DH');"
                 + "  });"
                 + ""
+                + "  // AI 辨識按鈕綁定"
                 + "  var btnScan = document.getElementById('btn_scan_ai');"
-                + "  btnScan.addEventListener('click', function() {"
+                + "  bindTap(btnScan, function() {"
                 + "    btnScan.innerText = '推演中...'; btnScan.disabled = true;"
                 + "    setTimeout(function() {"
                 + "      if (window.AndroidBridge) window.AndroidBridge.requestVisualAnalysis();"
