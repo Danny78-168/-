@@ -15,7 +15,7 @@ jobs:
 
       - name: Compile and Package IPA
         run: |
-          # 1. 自動清洗代碼並完整替換為「直接提示餘額不足」
+          # 1. 自動清洗破損字元並重構「直接提示餘額不足」邏輯
           python3 -c "
           import os, re, unicodedata
 
@@ -24,25 +24,37 @@ jobs:
               with open(path, 'rb') as f:
                   raw = f.read()
 
-              # 處理 BOM 標頭
+              # 移除 BOM 標頭
               if raw.startswith(b'\xef\xbb\xbf'): raw = raw[3:]
               elif raw.startswith(b'\xff\xfe'): raw = raw.decode('utf-16le').encode('utf-8')
               elif raw.startswith(b'\xfe\xff'): raw = raw.decode('utf-16be').encode('utf-8')
 
               text = raw.decode('utf-8', errors='ignore')
 
-              # 徹底過濾所有引用標籤與 span 標籤
-              text = re.sub(r'\]*\]', '', text)
-              text = re.sub(r'\[source:[^\]]*\]', '', text)
+              # 徹底過濾所有破損的 span 殘留標籤（包含未閉合與帶引號形式）
+              text = re.sub(r'\[span[_\w]*\"?\[?span[_\w]*\]?', '', text)
               text = re.sub(r'\[span[_\w]*\](?:\([^\)]*\))?', '', text)
-              text = re.sub(r'\[\/?span[_\w]*\]', '', text)
+              text = re.sub(r'\[\/?span[_\w]*\]?', '', text)
               text = re.sub(r'\((?:start|end)_span\)', '', text)
 
-              # Unicode 正規化（消除全形空白與特殊字元）
+              # 徹底過濾引用標籤
+              tag_c = 'c' + 'ite'
+              tag_s = 's' + 'ource'
+              text = re.sub(r'\[' + tag_c + r':[^\]]*\]', '', text)
+              text = re.sub(r'\[' + tag_s + r':[^\]]*\]', '', text)
+
+              # Unicode 正規化（清洗全形空白與特殊字元）
               text = unicodedata.normalize('NFKC', text)
               text = re.sub(r'[\u00a0\u1680\u180e\u2000-\u200b\u202f\u205f\u3000\ufeff]', ' ', text)
               text = re.sub(r'[\u200b-\u200d\u2060]', '', text)
               text = text.replace('\r\n', '\n').replace('\r', '\n')
+
+              # 徹底切除第 16-19 行破損的 OPENAI_KEY 區塊，替換為標準純淨定義
+              text = re.sub(
+                  r'private\s+let\s+OPENAI_KEY_PART1[\s\S]*?override\s+func\s+viewDidLoad\(\)',
+                  'private let openAIKey = \"\"\n\n    override func viewDidLoad()',
+                  text
+              )
 
               # 確保類別宣告純淨
               lines = text.split('\n')
@@ -53,7 +65,7 @@ jobs:
                       lines[i] = '    private var webView: WKWebView!'
               text = '\n'.join(lines)
 
-              # 完整替換 callOpenAIAstra 函式本體（徹底移除 URLRequest/url 殘留代碼）
+              # 完整替換 callOpenAIAstra 函式（不再請求外部 API，直接回傳餘額不足）
               clean_astra_func = '''private func callOpenAIAstra(base64Image: String, mode: String) {
                   DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
                       self?.isAnalyzing = false
@@ -64,24 +76,24 @@ jobs:
               private func extractJson'''
               text = re.sub(r'private func callOpenAIAstra\(.*?private func extractJson', clean_astra_func, text, flags=re.DOTALL)
 
-              # 替換 updateHUDWithError：直接於懸浮面板顯示【餘額不足】
+              # 替換 updateHUDWithError：直接於懸浮面板顯示【餘額不足】紅字提示
               new_hud_func = '''private func updateHUDWithError(_ msg: String) {
                   DispatchQueue.main.async { [weak self] in
                       let js = \"var t = document.getElementById('ai_pick_target'); if(t){ t.innerText = '餘額不足'; t.style.color = '#ef4444'; } var d = document.getElementById('ai_pick_desc'); if(d){ d.innerText = 'API 餘額不足，請充值後使用'; d.style.color = '#94a3b8'; } var s = document.getElementById('hud_score'); if(s){ s.innerText = '扣款失敗'; } var b = document.getElementById('btn_do_ai'); if(b){ b.innerText = '📸 截圖畫面並由 AI 辨識'; b.disabled = false; }\"
                       self?.webView.evaluateJavaScript(js, completionHandler: nil)
                   }
               }'''
-              text = re.sub(r'private func updateHUDWithError\(_ msg: String\) \{.*?self\?\.webView\.evaluateJavaScript\(js, completionHandler: nil\)\s*\}\s*\}', new_hud_func, text, flags=re.DOTALL)
+              text = re.sub(r'private func updateHUDWithError\(_ msg: String\) \{.*?self\?\.webView\.evaluateJavaScript\(js,\s*completionHandler:\s*nil\)\s*\}\s*\}', new_hud_func, text, flags=re.DOTALL)
 
               with open(path, 'w', encoding='utf-8') as f:
                   f.write(text)
-              print('已成功完整重構 callOpenAIAstra，徹底排除 url 變數未定義錯誤！')
+              print('ViewController.swift 破損的金鑰標籤已徹底清除並正規化！')
           "
 
           mkdir -p build/Payload/AstraAssistant.app
           SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
 
-          # 2. 自動補齊 iOS 啟動入口
+          # 2. 自動補齊 iOS 啟動入口 (AppDelegate)
           cat << 'EOF' > ios/AppDelegate.swift
           import UIKit
 
