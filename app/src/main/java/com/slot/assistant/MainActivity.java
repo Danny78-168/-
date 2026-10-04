@@ -469,7 +469,8 @@ public class MainActivity extends AppCompatActivity {
                     if (copyResult == PixelCopy.SUCCESS) {
                         btnScanAi.setText("Astra 推演中...");
 
-                        ByteArrayOutputStream();
+                        // 正確修正：完整宣告 ByteArrayOutputStream 物件變數
+                        ByteArrayOutputStream baos = new ByteArrayOutputStream();
                         bitmap.compress(Bitmap.CompressFormat.JPEG, 75, baos);
                         final String base64Image = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP);
 
