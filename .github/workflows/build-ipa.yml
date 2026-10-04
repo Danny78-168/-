@@ -15,7 +15,7 @@ jobs:
 
       - name: Compile and Package IPA
         run: |
-          # 1. 自動深度清洗 ViewController.swift（消除 cite 引用、span 標籤與全形字元）
+          # 1. 自動深度清洗 ViewController.swift
           python3 -c "
           import os, re, unicodedata
 
@@ -34,37 +34,35 @@ jobs:
 
               text = raw.decode('utf-8', errors='ignore')
 
-              # 徹底過濾所有 AI 引用標籤
-              text = re.sub(r'\]+\]', '', text)
+              # 消除所有 AI 引用標籤 (如、)
+              tag_cite = 'c' + 'ite'
+              tag_source = 's' + 'ource'
+              tag_span = 's' + 'pan'
 
-              # 過濾所有複製殘留的 [span...] 與 (start_span)/(end_span)
-              text = re.sub(r'\[span[_\w]*\](?:\([^\)]*\))?', '', text)
-              text = re.sub(r'\[\/?span[_\w]*\]', '', text)
-              text = re.sub(r'\((?:start|end)_span\)', '', text)
+              text = re.sub(r'\[' + tag_cite + r':[^\]]*\]', '', text)
+              text = re.sub(r'\[' + tag_source + r':[^\]]*\]', '', text)
+              text = re.sub(r'\[' + tag_span + r'[^\]]*\](?:\([^\)]*\))?', '', text)
+              text = re.sub(r'\[\/?' + tag_span + r'[^\]]*\]', '', text)
+              text = re.sub(r'\((?:start|end)_' + tag_span + r'\)', '', text)
 
-              # Unicode NFKC 正規化（將全形空格與符號轉為標準 ASCII）
+              # Unicode NFKC 正規化（消除全形空白與特殊字元）
               text = unicodedata.normalize('NFKC', text)
-
-              # 清理所有殘留的不可見字元與特殊空格
               text = re.sub(r'[\u00a0\u1680\u180e\u2000-\u200b\u202f\u205f\u3000\ufeff]', ' ', text)
               text = re.sub(r'[\u200b-\u200d\u2060]', '', text)
-
-              # 統一換行符號
               text = text.replace('\r\n', '\n').replace('\r', '\n')
 
-              # 確保類別宣告為純淨 ASCII 語法
+              # 確保類別宣告純淨
               lines = text.split('\n')
               for i, l in enumerate(lines):
                   if 'class ViewController' in l:
                       lines[i] = 'class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHandler, UITextFieldDelegate {'
-                  elif 'webView' in l and 'WKWebView' in l:
+                  elif 'webView' in l and 'WKWebView' in l and ('private' in l or 'var' in l):
                       lines[i] = '    private var webView: WKWebView!'
-
               text = '\n'.join(lines)
 
               with open(path, 'w', encoding='utf-8') as f:
                   f.write(text)
-              print('ViewController.swift 中的 cite 標籤與異常符號已全數清除乾淨！')
+              print('ViewController.swift 已徹底清洗乾淨！')
           "
 
           mkdir -p build/Payload/AstraAssistant.app
@@ -86,7 +84,7 @@ jobs:
           }
           EOF
 
-          # 3. 編譯 arm64 原生二進制檔案（啟用 -parse-as-library 並連結 UIKit、WebKit）
+          # 3. 編譯 arm64 原生二進制檔案
           swiftc -sdk "$SDK_PATH" \
                  -target arm64-apple-ios15.0 \
                  -parse-as-library \
