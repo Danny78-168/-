@@ -1,4 +1,4 @@
-name: Build iOS IPA
+name: build-ios
 
 on:
   push:
@@ -13,44 +13,103 @@ jobs:
       - name: Checkout Source Code
         uses: actions/checkout@v4
 
-      - name: Compile and Package IPA
+      - name: Auto-Sanitize Swift Code (自動清洗不可見字元)
         run: |
-          mkdir -p Payload/SlotAssistant.app
-
-          # 1. 自動過濾手機剪貼簿產生的 NBSP 與隱形零寬字元
           python3 -c "
-          import glob
-          for f in glob.glob('ios/*.swift'):
-              with open(f, 'rb') as fp:
-                  data = fp.read()
-              data = data.replace(b'\xc2\xa0', b' ')
-              for z in [b'\xe2\x80\x8b', b'\xe2\x80\x8c', b'\xe2\x80\x8d', b'\xef\xbb\xbf']:
-                  data = data.replace(z, b'')
-              with open(f, 'wb') as fp:
-                  fp.write(data)
+          import os
+
+          path = 'ios/ViewController.swift'
+          if os.path.exists(path):
+              with open(path, 'rb') as f:
+                  data = f.read()
+
+              # 去除 UTF-8 BOM 標頭
+              if data.startswith(b'\xef\xbb\xbf'):
+                  data = data[3:]
+
+              text = data.decode('utf-8', errors='ignore')
+
+              # 將網頁複製產生的 Non-Breaking Space、零寬字元還原為標準空白
+              text = text.replace('\u00a0', ' ')
+              text = text.replace('\u202f', ' ')
+              text = text.replace('\ufeff', '')
+              text = text.replace('\u200b', '')
+              text = text.replace('\u200c', '')
+              text = text.replace('\u200d', '')
+              text = text.replace('\r\n', '\n')
+
+              with open(path, 'w', encoding='utf-8') as f:
+                  f.write(text)
+              print('ViewController.swift 不可見字元已自動清除乾淨！')
           "
 
-          # 2. 加入 -parse-as-library 支援 @main 原生編譯
+      - name: Compile and Package IPA
+        run: |
+          mkdir -p build/Payload/AstraAssistant.app
           SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
-          xcrun --sdk iphoneos swiftc \
-            -target arm64-apple-ios15.0 \
-            -sdk "$SDK_PATH" \
-            -parse-as-library \
-            -framework UIKit \
-            -framework WebKit \
-            -framework Foundation \
-            ios/AppDelegate.swift \
-            ios/ViewController.swift \
-            -o Payload/SlotAssistant.app/SlotAssistant
 
-          # 3. 複製設定檔並封裝 IPA
-          cp ios/Info.plist Payload/SlotAssistant.app/Info.plist
-          codesign -s - --force Payload/SlotAssistant.app
-          zip -r SlotAssistant.ipa Payload
+          # 自動補齊 iOS 應用程式啟動入口 (AppDelegate)
+          cat << 'EOF' > ios/AppDelegate.swift
+          import UIKit
+
+          @main
+          class AppDelegate: UIResponder, UIApplicationDelegate {
+              var window: UIWindow?
+              func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+                  window = UIWindow(frame: UIScreen.main.bounds)
+                  window?.rootViewController = ViewController()
+                  window?.makeKeyAndVisible()
+                  return true
+              }
+          }
+          EOF
+
+          # 編譯 arm64 原生 iOS 執行檔
+          swiftc -sdk "$SDK_PATH" \
+                 -target arm64-apple-ios15.0 \
+                 ios/AppDelegate.swift ios/ViewController.swift \
+                 -o build/Payload/AstraAssistant.app/AstraAssistant
+
+          # 生成 Info.plist
+          cat << 'EOF' > build/Payload/AstraAssistant.app/Info.plist
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+              <key>CFBundleExecutable</key>
+              <string>AstraAssistant</string>
+              <key>CFBundleIdentifier</key>
+              <string>com.slot.assistant</string>
+              <key>CFBundleName</key>
+              <string>Astra Assistant</string>
+              <key>CFBundlePackageType</key>
+              <string>APPL</string>
+              <key>CFBundleShortVersionString</key>
+              <string>1.0.0</string>
+              <key>CFBundleVersion</key>
+              <string>1</string>
+              <key>LSRequiresIPhoneOS</key>
+              <true/>
+              <key>UILaunchStoryboardName</key>
+              <string>LaunchScreen</string>
+              <key>UIRequiredDeviceCapabilities</key>
+              <array>
+                  <string>arm64</string>
+              </array>
+              <key>UISupportedInterfaceOrientations</key>
+              <array>
+                  <string>UIInterfaceOrientationPortrait</string>
+              </array>
+          </dict>
+          </plist>
+          EOF
+
+          # 打包為 IPA 格式
+          cd build
+          zip -qry ../AstraAssistant.ipa Payload
 
       - name: Upload IPA Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: SlotAssistant-iOS-IPA
-          path: SlotAssistant.ipa
-          if-no-files-found: error
+          name: AstraAssistant-iOS-IPA
+          path: AstraAssistant.ipa
