@@ -3,17 +3,23 @@ package com.slot.assistant;
 import android.annotation.SuppressLint;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
+import android.graphics.Color;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Base64;
+import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.View;
+import android.view.inputmethod.EditorInfo;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.Button;
+import android.widget.EditText;
+import android.widget.LinearLayout;
 import androidx.appcompat.app.AppCompatActivity;
 
 import org.json.JSONArray;
@@ -31,6 +37,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends AppCompatActivity {
+    // 🔑 拆分字串內建 OpenAI 金鑰
     private static final String OPENAI_KEY_PART1 = "sk-proj-dwQyYlJrpRoJqtP9ZCcPjQzDUtQXJi1MT1sd6OfsMdW7RF";
     private static final String OPENAI_KEY_PART2 = "OIOwKJ1JSgi2Satw9WoTaiC8WHPxT3BlbkFJhhCPi2LwrFZ3k7mbJ_LSvLLm65LHzcjTbnqkvKEyKsBgbRlmJzX8X0pGNyrvgH-vPN9sAcwiwA";
 
@@ -39,6 +46,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private WebView webView;
+    private EditText etUrlInput;
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private boolean isAnalyzing = false;
 
@@ -47,8 +55,76 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
+        // 🌟 建立主容器（縱向排列：上方網址列 + 下方 WebView）
+        LinearLayout rootLayout = new LinearLayout(this);
+        rootLayout.setOrientation(LinearLayout.VERTICAL);
+        rootLayout.setLayoutParams(new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT));
+
+        // 🌐 頂部網址輸入窗口
+        LinearLayout topBar = new LinearLayout(this);
+        topBar.setOrientation(LinearLayout.HORIZONTAL);
+        topBar.setBackgroundColor(Color.parseColor("#0f172a"));
+        topBar.setPadding(12, 10, 12, 10);
+        topBar.setGravity(Gravity.CENTER_VERTICAL);
+
+        etUrlInput = new EditText(this);
+        etUrlInput.setHint("輸入網址或搜尋...");
+        etUrlInput.setHintTextColor(Color.parseColor("#64748b"));
+        etUrlInput.setTextColor(Color.parseColor("#f8fafc"));
+        etUrlInput.setTextSize(12);
+        etUrlInput.setSingleLine(true);
+        etUrlInput.setBackgroundColor(Color.parseColor("#1e293b"));
+        etUrlInput.setPadding(20, 14, 20, 14);
+        LinearLayout.LayoutParams etParams = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1.0f);
+        etParams.setMargins(0, 0, 10, 0);
+        etUrlInput.setLayoutParams(etParams);
+
+        Button btnGo = new Button(this);
+        btnGo.setText("前往");
+        btnGo.setTextColor(Color.WHITE);
+        btnGo.setTextSize(12);
+        btnGo.setBackgroundColor(Color.parseColor("#2563eb"));
+        btnGo.setPadding(20, 0, 20, 0);
+
+        View.OnClickListener goListener = new View.OnClickListener() {
+            @Override
+            public void onClick(View v) {
+                String target = etUrlInput.getText().toString().trim();
+                if (!target.isEmpty()) {
+                    if (!target.startsWith("http://") && !target.startsWith("https://")) {
+                        target = "https://" + target;
+                    }
+                    webView.loadUrl(target);
+                }
+            }
+        };
+
+        btnGo.setOnClickListener(goListener);
+        etUrlInput.setOnEditorActionListener(new android.widget.TextView.OnEditorActionListener() {
+            @Override
+            public boolean onEditorAction(android.widget.TextView v, int actionId, KeyEvent event) {
+                if (actionId == EditorInfo.IME_ACTION_GO || actionId == EditorInfo.IME_ACTION_DONE ||
+                    (event != null && event.getKeyCode() == KeyEvent.KEYCODE_ENTER)) {
+                    btnGo.performClick();
+                    return true;
+                }
+                return false;
+            }
+        });
+
+        topBar.addView(etUrlInput);
+        topBar.addView(btnGo);
+        rootLayout.addView(topBar);
+
+        // 核心網頁視窗
         webView = new WebView(this);
-        setContentView(webView);
+        LinearLayout.LayoutParams webParams = new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1.0f);
+        webView.setLayoutParams(webParams);
+        rootLayout.addView(webView);
+
+        setContentView(rootLayout);
 
         webView.setFocusable(true);
         webView.setFocusableInTouchMode(true);
@@ -62,7 +138,7 @@ public class MainActivity extends AppCompatActivity {
         settings.setLoadWithOverviewMode(true);
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setJavaScriptCanOpenWindowsAutomatically(true);
-        settings.setSupportMultipleWindows(false); // 關閉多視窗，強制所有彈窗在當前視窗直接打開，解決 SA 等廠商進不去問題
+        settings.setSupportMultipleWindows(false);
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
@@ -71,6 +147,7 @@ public class MainActivity extends AppCompatActivity {
 
         settings.setUserAgentString("Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36");
 
+        // 原生雙向通道
         webView.addJavascriptInterface(new Object() {
             @JavascriptInterface
             public void switchGame(final String targetUrl) {
@@ -99,10 +176,12 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
+                etUrlInput.setText(url);
                 injectAssistantScript(view);
             }
         });
 
+        // 預設首頁
         webView.loadUrl("https://www.google.com");
     }
 
@@ -272,146 +351,169 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void injectAssistantScript(WebView view) {
-        String js = "javascript:(function() {" +
-            "if (document.getElementById('slot-assistant-hud')) return;" +
+        StringBuilder sb = new StringBuilder();
+        sb.append("javascript:(function() {");
+        sb.append("  function initHUD() {");
+        sb.append("    if (!document.body || document.getElementById('slot-assistant-hud')) return;");
 
-            "function bindTap(el, fn) {" +
-            "  if (!el) return;" +
-            "  var moved = false;" +
-            "  el.addEventListener('touchstart', function(e) { moved = false; }, { passive: true });" +
-            "  el.addEventListener('touchmove', function(e) { moved = true; }, { passive: true });" +
-            "  el.addEventListener('touchend', function(e) {" +
-            "    if (!moved) { e.preventDefault(); e.stopPropagation(); fn(); }" +
-            "  });" +
-            "  el.addEventListener('click', function(e) { e.stopPropagation(); fn(); });" +
-            "}" +
+        // 觸控封裝
+        sb.append("    function bindTap(el, fn) {");
+        sb.append("      if (!el) return;");
+        sb.append("      var moved = false;");
+        sb.append("      el.addEventListener('touchstart', function(e) { moved = false; }, { passive: true });");
+        sb.append("      el.addEventListener('touchmove', function(e) { moved = true; }, { passive: true });");
+        sb.append("      el.addEventListener('touchend', function(e) {");
+        sb.append("        if (!moved) { e.preventDefault(); e.stopPropagation(); fn(); }");
+        sb.append("      });");
+        sb.append("      el.addEventListener('click', function(e) { e.stopPropagation(); fn(); });");
+        sb.append("    }");
 
-            "var hud = document.createElement('div');" +
-            "hud.id = 'slot-assistant-hud';" +
-            "hud.style.cssText = 'position:fixed;top:45px;right:8px;width:215px;background:rgba(11,17,32,0.96);border:1px solid #38bdf8;border-radius:10px;z-index:999999;color:#f1f5f9;font-size:11px;box-shadow:0 8px 24px rgba(0,0,0,0.85);font-family:sans-serif;user-select:none;backdrop-filter:blur(6px);';" +
-            "hud.innerHTML = " +
-                "'<div id=\"hud_header\" style=\"padding:7px 10px;background:#1e293b;border-radius:10px 10px 0 0;font-weight:bold;color:#38bdf8;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #334155;cursor:move;touch-action:none;\">" +
-                    "<span>👁 Astra 深度推論</span>" +
-                    "<span id=\"hud_tog\" style=\"cursor:pointer;color:#94a3b8;font-size:10px;\">[收]</span>" +
-                "</div>' +" +
-                "'<div id=\"hud_content\" style=\"padding:8px;\">' +" +
-                    // 自訂小視窗內部專用下拉選單（解決全螢幕彈窗）
-                    "'<div style=\"position:relative;margin-bottom:6px;\">' +" +
-                        "<div id=\"custom_drop_btn\" style=\"background:#0f172a;border:1px solid #38bdf8;color:#38bdf8;padding:6px 8px;border-radius:4px;font-size:10px;font-weight:bold;cursor:pointer;display:flex;justify-content:space-between;align-items:center;\">" +
-                            "<span id=\"custom_drop_text\">⚡ 切換遊戲入口 ▼</span>" +
-                        "</div>" +
-                        "<div id=\"custom_drop_list\" style=\"display:none;position:absolute;top:100%;left:0;right:0;max-height:150px;overflow-y:auto;background:#0b1120;border:1px solid #38bdf8;border-top:none;border-radius:0 0 6px 6px;z-index:100000;box-shadow:0 8px 20px rgba(0,0,0,0.95);\">" +
-                            "<div class=\"drop_opt\" data-url=\"https://www.google.com\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🌐 Google 首頁</div>" +
-                            "<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game?type=3\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🏠 遊戲大廳列表</div>" +
-                            "<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=meta_all&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 MT 百家樂</div>" +
-                            "<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=dg&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 DG 百家樂</div>" +
-                            "<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=allbet&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 歐博 百家樂</div>" +
-                            "<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=sa&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 SA 真人 (SA LIVE)</div>" +
-                            "<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=sagaming&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 SA 真人 (備用)</div>" +
-                            "<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=bg&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 BG 百家樂</div>" +
-                            "<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=t9&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 T9 百家樂</div>" +
-                            "<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=astar&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 ASTAR 百家樂</div>" +
-                            "<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=gclub&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 GCLUB 真人</div>" +
-                            "<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=pt&game_type=3&device=mobile\" style=\"padding:6px 8px;\">🎰 PT 百家樂</div>" +
-                        "</div>" +
-                    "'</div>' +" +
-                    // 預測展示區（強制二選一）
-                    "'<div style=\"background:rgba(15,23,42,0.85);border:1px solid #1e3a8a;border-radius:6px;padding:6px 4px;text-align:center;margin-bottom:6px;\">" +
-                        "<div style=\"font-size:10px;color:#94a3b8;\">🎯 深度路單精算建議</div>" +
-                        "<div id=\"ai_pick_target\" style=\"font-size:18px;font-weight:900;color:#ef4444;margin:2px 0;\">待命中</div>" +
-                        "<div id=\"ai_pick_desc\" style=\"font-size:9px;color:#38bdf8;line-height:1.2;\">請進入牌桌後點擊下方按鈕</div>" +
-                    "</div>' +" +
-                    // 底盤即時數據：本局總數 / 莊 / 和 / 閒
-                    "'<div id=\"hud_stats_box\" style=\"background:#0f172a;border:1px dashed #334155;border-radius:4px;padding:4px;text-align:center;font-size:10px;color:#38bdf8;margin-bottom:6px;\">" +
-                        "總數: -- | 莊: -- | 和: -- | 閒: --" +
-                    "</div>' +" +
-                    "'<button id=\"btn_do_ai\" style=\"width:100%;background:#2563eb;color:#fff;border:none;padding:7px 0;border-radius:4px;font-weight:bold;margin-bottom:4px;font-size:11px;\">📸 截圖畫面並由 AI 辨識</button>' +" +
-                "'</div>';" +
-            "document.body.appendChild(hud);" +
+        // 建立浮動視窗節點
+        sb.append("    var hud = document.createElement('div');");
+        sb.append("    hud.id = 'slot-assistant-hud';");
+        sb.append("    hud.style.cssText = 'position:fixed;top:65px;right:8px;width:215px;background:rgba(11,17,32,0.96);border:1px solid #38bdf8;border-radius:10px;z-index:99999999;color:#f1f5f9;font-size:11px;box-shadow:0 8px 24px rgba(0,0,0,0.85);font-family:sans-serif;user-select:none;backdrop-filter:blur(6px);';");
 
-            // 拖曳處理
-            "var header = document.getElementById('hud_header');" +
-            "var isDrag = false, sX, sY, iL, iT;" +
-            "header.addEventListener('touchstart', function(e) {" +
-            "  if (e.target.closest('#hud_tog')) return;" +
-            "  isDrag = true; var t = e.touches[0]; var r = hud.getBoundingClientRect();" +
-            "  sX = t.clientX; sY = t.clientY; iL = r.left; iT = r.top;" +
-            "}, { passive: true });" +
-            "header.addEventListener('touchmove', function(e) {" +
-            "  if (!isDrag) return;" +
-            "  var t = e.touches[0];" +
-            "  hud.style.left = Math.max(0, Math.min(iL + (t.clientX - sX), window.innerWidth - hud.offsetWidth)) + 'px';" +
-            "  hud.style.top = Math.max(0, Math.min(iT + (t.clientY - sY), window.innerHeight - hud.offsetHeight)) + 'px';" +
-            "  hud.style.right = 'auto';" +
-            "}, { passive: false });" +
-            "header.addEventListener('touchend', function() { isDrag = false; });" +
+        // 安全組裝 HTML
+        sb.append("    var h = '';");
+        sb.append("    h += '<div id=\"hud_header\" style=\"padding:7px 10px;background:#1e293b;border-radius:10px 10px 0 0;font-weight:bold;color:#38bdf8;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #334155;cursor:move;touch-action:none;\">';");
+        sb.append("    h += '<span>👁 Astra 深度推論</span>';");
+        sb.append("    h += '<span id=\"hud_tog\" style=\"cursor:pointer;color:#94a3b8;font-size:10px;\">[收]</span>';");
+        sb.append("    h += '</div>';");
 
-            // 展開收合
-            "var tog = document.getElementById('hud_tog');" +
-            "var cnt = document.getElementById('hud_content');" +
-            "bindTap(tog, function() {" +
-            "  if (cnt.style.display === 'none') { cnt.style.display = 'block'; tog.innerText = '[收]'; }" +
-            "  else { cnt.style.display = 'none'; tog.innerText = '[展]'; }" +
-            "});" +
+        sb.append("    h += '<div id=\"hud_content\" style=\"padding:8px;\">';");
 
-            // 自訂下拉選單控制
-            "var dropBtn = document.getElementById('custom_drop_btn');" +
-            "var dropList = document.getElementById('custom_drop_list');" +
-            "bindTap(dropBtn, function() {" +
-            "  var isShow = dropList.style.display === 'block';" +
-            "  dropList.style.display = isShow ? 'none' : 'block';" +
-            "});" +
+        // 自訂下拉選單（小視窗內部，絕不觸發系統全螢幕）
+        sb.append("    h += '<div style=\"position:relative;margin-bottom:6px;\">';");
+        sb.append("    h += '<div id=\"custom_drop_btn\" style=\"background:#0f172a;border:1px solid #38bdf8;color:#38bdf8;padding:6px 8px;border-radius:4px;font-size:10px;font-weight:bold;cursor:pointer;display:flex;justify-content:space-between;align-items:center;\">';");
+        sb.append("    h += '<span id=\"custom_drop_text\">⚡ 切換遊戲入口 ▼</span>';");
+        sb.append("    h += '</div>';");
 
-            // 綁定各遊戲跳轉
-            "var opts = document.querySelectorAll('.drop_opt');" +
-            "for (var i = 0; i < opts.length; i++) {" +
-            "  (function(el) {" +
-            "    bindTap(el, function() {" +
-            "      var url = el.getAttribute('data-url');" +
-            "      document.getElementById('custom_drop_text').innerText = el.innerText;" +
-            "      dropList.style.display = 'none';" +
-            "      if (window.AndroidBridge && window.AndroidBridge.switchGame) {" +
-            "        window.AndroidBridge.switchGame(url);" +
-            "      } else {" +
-            "        location.href = url;" +
-            "      }" +
-            "    });" +
-            "  })(opts[i]);" +
-            "}" +
+        sb.append("    h += '<div id=\"custom_drop_list\" style=\"display:none;position:absolute;top:100%;left:0;right:0;max-height:150px;overflow-y:auto;background:#0b1120;border:1px solid #38bdf8;border-top:none;border-radius:0 0 6px 6px;z-index:100000;box-shadow:0 8px 20px rgba(0,0,0,0.95);\">';");
+        sb.append("    h += '<div class=\"drop_opt\" data-url=\"https://www.google.com\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🌐 Google 首頁</div>';");
+        sb.append("    h += '<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game?type=3\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🏠 遊戲大廳列表</div>';");
+        sb.append("    h += '<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=meta_all&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 MT 百家樂</div>';");
+        sb.append("    h += '<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=dg&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 DG 百家樂</div>';");
+        sb.append("    h += '<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=allbet&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 歐博 百家樂</div>';");
+        sb.append("    h += '<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=sa&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 SA 真人 (SA LIVE)</div>';");
+        sb.append("    h += '<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=sagaming&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 SA 真人 (備用通道)</div>';");
+        sb.append("    h += '<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=bg&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 BG 百家樂</div>';");
+        sb.append("    h += '<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=t9&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 T9 百家樂</div>';");
+        sb.append("    h += '<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=astar&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 ASTAR 百家樂</div>';");
+        sb.append("    h += '<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=gclub&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 GCLUB 真人</div>';");
+        sb.append("    h += '<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=pt&game_type=3&device=mobile\" style=\"padding:6px 8px;\">🎰 PT 百家樂</div>';");
+        sb.append("    h += '</div>';");
+        sb.append("    h += '</div>';");
 
-            // 觸發視覺推論
-            "var btnDo = document.getElementById('btn_do_ai');" +
-            "bindTap(btnDo, function() {" +
-            "  btnDo.innerText = '🧠 Astra 深度推論中...';" +
-            "  btnDo.disabled = true;" +
-            "  if (window.AndroidBridge && window.AndroidBridge.requestVisualAnalysis) {" +
-            "    window.AndroidBridge.requestVisualAnalysis();" +
-            "  }" +
-                  "});" +
+        // 預測核心
+        sb.append("    h += '<div style=\"background:rgba(15,23,42,0.85);border:1px solid #1e3a8a;border-radius:6px;padding:6px 4px;text-align:center;margin-bottom:6px;\">';");
+        sb.append("    h += '<div style=\"font-size:10px;color:#94a3b8;\">🎯 深度路單精算建議</div>';");
+        sb.append("    h += '<div id=\"ai_pick_target\" style=\"font-size:18px;font-weight:900;color:#ef4444;margin:2px 0;\">待命中</div>';");
+        sb.append("    h += '<div id=\"ai_pick_desc\" style=\"font-size:9px;color:#38bdf8;line-height:1.2;\">請進入牌桌後點擊下方按鈕</div>';");
+        sb.append("    h += '</div>';");
 
-            // 回調更新 UI
-            "window.__updateAI = function(pick, conf, reason, stats) {" +
-            "  var t = document.getElementById('ai_pick_target');" +
-            "  var d = document.getElementById('ai_pick_desc');" +
-            "  var s = document.getElementById('hud_stats_box');" +
-            "  if (t) {" +
-            "    t.innerText = '【' + pick + '】 ' + conf + '%';" +
-            "    t.style.color = (pick === '莊') ? '#ef4444' : '#38bdf8';" +
-            "  }" +
-            "  if (d) d.innerText = reason;" +
-            "  if (s) s.innerText = stats;" +
-            "  btnDo.innerText = '📸 截圖畫面並由 AI 辨識';" +
-            "  btnDo.disabled = false;" +
-            "};" +
+        // 底盤即時數據：本局總數 / 莊 / 和 / 閒
+        sb.append("    h += '<div id=\"hud_stats_box\" style=\"background:#0f172a;border:1px dashed #334155;border-radius:4px;padding:4px;text-align:center;font-size:10px;color:#38bdf8;margin-bottom:6px;\">';");
+        sb.append("    h += '總數: -- | 莊: -- | 和: -- | 閒: --';");
+        sb.append("    h += '</div>';");
 
-            "window.__updateAIError = function(msg) {" +
-            "  var d = document.getElementById('ai_pick_desc');" +
-            "  if (d) d.innerText = '錯誤: ' + msg;" +
-            "  btnDo.innerText = '📸 截圖畫面並由 AI 辨識';" +
-            "  btnDo.disabled = false;" +
-            "};" +
-        "})();";
+        // 按鈕
+        sb.append("    h += '<button id=\"btn_do_ai\" style=\"width:100%;background:#2563eb;color:#fff;border:none;padding:7px 0;border-radius:4px;font-weight:bold;margin-bottom:4px;font-size:11px;\">📸 截圖畫面並由 AI 辨識</button>';");
+        sb.append("    h += '</div>';");
 
-        view.evaluateJavascript(js, null);
+        sb.append("    hud.innerHTML = h;");
+        sb.append("    document.body.appendChild(hud);");
+
+        // 拖曳控制
+        sb.append("    var header = document.getElementById('hud_header');");
+        sb.append("    var isDrag = false, sX, sY, iL, iT;");
+        sb.append("    header.addEventListener('touchstart', function(e) {");
+        sb.append("      if (e.target.closest('#hud_tog')) return;");
+        sb.append("      isDrag = true; var t = e.touches[0]; var r = hud.getBoundingClientRect();");
+        sb.append("      sX = t.clientX; sY = t.clientY; iL = r.left; iT = r.top;");
+        sb.append("    }, { passive: true });");
+        sb.append("    header.addEventListener('touchmove', function(e) {");
+        sb.append("      if (!isDrag) return; var t = e.touches[0];");
+        sb.append("      hud.style.left = Math.max(0, Math.min(iL + (t.clientX - sX), window.innerWidth - hud.offsetWidth)) + 'px';");
+        sb.append("      hud.style.top = Math.max(0, Math.min(iT + (t.clientY - sY), window.innerHeight - hud.offsetHeight)) + 'px';");
+        sb.append("      hud.style.right = 'auto';");
+        sb.append("    }, { passive: false });");
+        sb.append("    header.addEventListener('touchend', function() { isDrag = false; });");
+
+        // 收合控制
+        sb.append("    var tog = document.getElementById('hud_tog');");
+        sb.append("    var cnt = document.getElementById('hud_content');");
+        sb.append("    bindTap(tog, function() {");
+        sb.append("      var hide = (cnt.style.display === 'none');");
+        sb.append("      cnt.style.display = hide ? 'block' : 'none';");
+        sb.append("      tog.innerText = hide ? '[收]' : '[展]';");
+        sb.append("    });");
+
+        // 下拉選單開關
+        sb.append("    var dropBtn = document.getElementById('custom_drop_btn');");
+        sb.append("    var dropList = document.getElementById('custom_drop_list');");
+        sb.append("    bindTap(dropBtn, function() {");
+        sb.append("      var isShow = (dropList.style.display === 'block');");
+        sb.append("      dropList.style.display = isShow ? 'none' : 'block';");
+        sb.append("    });");
+
+        // 跳轉邏輯
+        sb.append("    var opts = document.querySelectorAll('.drop_opt');");
+        sb.append("    for (var i = 0; i < opts.length; i++) {");
+        sb.append("      (function(el) {");
+        sb.append("        bindTap(el, function() {");
+        sb.append("          var url = el.getAttribute('data-url');");
+        sb.append("          document.getElementById('custom_drop_text').innerText = el.innerText;");
+        sb.append("          dropList.style.display = 'none';");
+        sb.append("          if (window.AndroidBridge && window.AndroidBridge.switchGame) {");
+        sb.append("            window.AndroidBridge.switchGame(url);");
+        sb.append("          } else {");
+        sb.append("            location.href = url;");
+        sb.append("          }");
+        sb.append("        });");
+        sb.append("      })(opts[i]);");
+        sb.append("    }");
+
+        // 觸發推論
+        sb.append("    var btnDo = document.getElementById('btn_do_ai');");
+        sb.append("    bindTap(btnDo, function() {");
+        sb.append("      btnDo.innerText = '🧠 Astra 深度推論中...';");
+        sb.append("      btnDo.disabled = true;");
+        sb.append("      if (window.AndroidBridge && window.AndroidBridge.requestVisualAnalysis) {");
+        sb.append("        window.AndroidBridge.requestVisualAnalysis();");
+        sb.append("      }");
+        sb.append("    });");
+        sb.append("  }");
+
+        // 頁面生命週期掛載
+        sb.append("  if (document.readyState === 'loading') {");
+        sb.append("    document.addEventListener('DOMContentLoaded', initHUD);");
+        sb.append("  } else {");
+        sb.append("    initHUD();");
+        sb.append("  }");
+
+        // 跨頁回調函式
+        sb.append("  window.__updateAI = function(pick, conf, reason, stats) {");
+        sb.append("    var t = document.getElementById('ai_pick_target');");
+        sb.append("    var d = document.getElementById('ai_pick_desc');");
+        sb.append("    var s = document.getElementById('hud_stats_box');");
+        sb.append("    var b = document.getElementById('btn_do_ai');");
+        sb.append("    if (t) {");
+        sb.append("      t.innerText = '【' + pick + '】 ' + conf + '%';");
+        sb.append("      t.style.color = (pick === '莊') ? '#ef4444' : '#38bdf8';");
+        sb.append("    }");
+        sb.append("    if (d) d.innerText = reason;");
+        sb.append("    if (s) s.innerText = stats;");
+        sb.append("    if (b) { b.innerText = '📸 截圖畫面並由 AI 辨識'; b.disabled = false; }");
+        sb.append("  };");
+
+        sb.append("  window.__updateAIError = function(msg) {");
+        sb.append("    var d = document.getElementById('ai_pick_desc');");
+        sb.append("    var b = document.getElementById('btn_do_ai');");
+        sb.append("    if (d) d.innerText = '錯誤: ' + msg;");
+        sb.append("    if (b) { b.innerText = '📸 截圖畫面並由 AI 辨識'; b.disabled = false; }");
+        sb.append("  };");
+        sb.append("})();");
+
+        view.evaluateJavascript(sb.toString(), null);
     }
 }
