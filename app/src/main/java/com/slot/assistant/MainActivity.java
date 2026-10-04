@@ -7,17 +7,21 @@ import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.TypedValue;
 import android.view.Gravity;
+import android.view.MotionEvent;
 import android.view.View;
-import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
+import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
 
@@ -30,19 +34,24 @@ import java.net.URL;
 
 public class MainActivity extends AppCompatActivity {
 
-    // 已直接填入你的 Cloudflare Worker API 網址
     public static final String CF_WORKER_BALANCE_URL = "https://openai.zhu90305.workers.dev/";
 
     private WebView webView;
     private EditText etUrl;
+    private TextView tvBalance;
+    private TextView tvStatusMain;
+    private TextView tvStatusSub;
+    private TextView tvStatsLine;
+    private TextView tvCostTag;
+    private Button btnScanAi;
     private double currentBalance = 0.00;
 
-    @SuppressLint("SetJavaScriptEnabled")
+    @SuppressLint({"SetJavaScriptEnabled", "ClickableViewAccessibility"})
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // 1. 取得手機狀態列實際高度，動態避讓時間與訊號圖示
+        // 1. 計算狀態列高度
         int statusBarHeight = 0;
         int resourceId = getResources().getIdentifier("status_bar_height", "dimen", "android");
         if (resourceId > 0) {
@@ -52,12 +61,17 @@ public class MainActivity extends AppCompatActivity {
             statusBarHeight = dp(32);
         }
 
-        // 2. 根佈局
-        LinearLayout root = new LinearLayout(this);
-        root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.parseColor("#0B1120"));
+        // 2. 根容器改用 FrameLayout（確保原生懸浮窗可永久疊加於最上層）
+        FrameLayout rootLayout = new FrameLayout(this);
+        rootLayout.setBackgroundColor(Color.parseColor("#0B1120"));
 
-        // 3. 頂部網址列（加入頂部狀態列安全距離）
+        // 3. 底層主視圖：頂部網址列 + WebView 瀏覽器
+        LinearLayout mainLayout = new LinearLayout(this);
+        mainLayout.setOrientation(LinearLayout.VERTICAL);
+        mainLayout.setLayoutParams(new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+
+        // 頂部導航列
         LinearLayout topBar = new LinearLayout(this);
         topBar.setOrientation(LinearLayout.HORIZONTAL);
         topBar.setBackgroundColor(Color.parseColor("#0F172A"));
@@ -65,7 +79,7 @@ public class MainActivity extends AppCompatActivity {
         topBar.setPadding(dp(10), statusBarHeight + dp(6), dp(10), dp(10));
 
         etUrl = new EditText(this);
-        etUrl.setText("https://www.google.com/");
+        etUrl.setText("https://you888a.com/");
         etUrl.setTextColor(Color.WHITE);
         etUrl.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
         etUrl.setHint("請輸入或貼上任何遊戲網址...");
@@ -76,7 +90,6 @@ public class MainActivity extends AppCompatActivity {
         LinearLayout.LayoutParams etParams = new LinearLayout.LayoutParams(0, dp(38), 1f);
         topBar.addView(etUrl, etParams);
 
-        // 重新整理按鈕
         Button btnRefresh = new Button(this);
         btnRefresh.setText("重新整理");
         btnRefresh.setTextColor(Color.WHITE);
@@ -87,7 +100,6 @@ public class MainActivity extends AppCompatActivity {
         refreshParams.setMargins(dp(6), 0, 0, 0);
         topBar.addView(btnRefresh, refreshParams);
 
-        // 前往按鈕
         Button btnGo = new Button(this);
         btnGo.setText("前往");
         btnGo.setTextColor(Color.WHITE);
@@ -98,13 +110,13 @@ public class MainActivity extends AppCompatActivity {
         btnParams.setMargins(dp(6), 0, 0, 0);
         topBar.addView(btnGo, btnParams);
 
-        root.addView(topBar);
+        mainLayout.addView(topBar);
 
-        // 4. WebView 瀏覽容器
+        // WebView
         webView = new WebView(this);
         LinearLayout.LayoutParams webParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
-        root.addView(webView, webParams);
+        mainLayout.addView(webView, webParams);
 
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -116,8 +128,6 @@ public class MainActivity extends AppCompatActivity {
         settings.setBuiltInZoomControls(true);
         settings.setDisplayZoomControls(false);
         settings.setUserAgentString("Mozilla/5.0 (Linux; Android 14; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36");
-
-        webView.addJavascriptInterface(new AndroidBridge(), "AndroidBridge");
 
         webView.setWebViewClient(new WebViewClient() {
             @Override
@@ -136,7 +146,6 @@ public class MainActivity extends AppCompatActivity {
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 etUrl.setText(url);
-                injectAssistantScript();
                 fetchRealBalanceFromCloudflare();
             }
         });
@@ -160,11 +169,330 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        setContentView(root);
-        webView.loadUrl("https://www.google.com/");
+        rootLayout.addView(mainLayout);
+
+        // 4. 原生常駐懸浮窗視圖（完全不受網頁跳轉或重繪影響）
+        LinearLayout hudContainer = buildNativeHudView(statusBarHeight);
+        rootLayout.addView(hudContainer);
+
+        setContentView(rootLayout);
+        webView.loadUrl("https://you888a.com/");
+        fetchRealBalanceFromCloudflare();
     }
 
-    // 非同步向 Cloudflare Worker 請求 D1 資料庫真實餘額
+    // 建立 1:1 原生懸浮窗
+    @SuppressLint("ClickableViewAccessibility")
+    private LinearLayout buildNativeHudView(int statusBarHeight) {
+        final LinearLayout hud = new LinearLayout(this);
+        hud.setOrientation(LinearLayout.VERTICAL);
+        hud.setBackground(createBoxDrawable(Color.parseColor("#0B1120"), Color.parseColor("#38BDF8"), 10));
+
+        FrameLayout.LayoutParams hudParams = new FrameLayout.LayoutParams(dp(245), FrameLayout.LayoutParams.WRAP_CONTENT);
+        hudParams.gravity = Gravity.TOP | Gravity.END;
+        hudParams.topMargin = statusBarHeight + dp(55);
+        hudParams.rightMargin = dp(14);
+        hud.setLayoutParams(hudParams);
+
+        // 頂部標題列（支援拖曳）
+        LinearLayout header = new LinearLayout(this);
+        header.setOrientation(LinearLayout.HORIZONTAL);
+        header.setBackground(createBoxDrawable(Color.parseColor("#1E293B"), 0, 10));
+        header.setPadding(dp(10), dp(8), dp(10), dp(8));
+        header.setGravity(Gravity.CENTER_VERTICAL);
+
+        final TextView tvTitle = new TextView(this);
+        tvTitle.setText("👁 Astra 深度推論");
+        tvTitle.setTextColor(Color.parseColor("#38BDF8"));
+        tvTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        tvTitle.setTypeface(null, Typeface.BOLD);
+        header.addView(tvTitle, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        final TextView tvCollapse = new TextView(this);
+        tvCollapse.setText("[收]");
+        tvCollapse.setTextColor(Color.parseColor("#38BDF8"));
+        tvCollapse.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+        tvCollapse.setTypeface(null, Typeface.BOLD);
+        tvCollapse.setPadding(dp(4), dp(2), dp(4), dp(2));
+        header.addView(tvCollapse);
+
+        hud.addView(header);
+
+        // 懸浮窗主體
+        final LinearLayout body = new LinearLayout(this);
+        body.setOrientation(LinearLayout.VERTICAL);
+
+        // 分頁列
+        LinearLayout tabBar = new LinearLayout(this);
+        tabBar.setOrientation(LinearLayout.HORIZONTAL);
+        tabBar.setBackgroundColor(Color.parseColor("#0F172A"));
+
+        final TextView tabAi = new TextView(this);
+        tabAi.setText("🎯 AI 精算");
+        tabAi.setTextColor(Color.parseColor("#38BDF8"));
+        tabAi.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        tabAi.setTypeface(null, Typeface.BOLD);
+        tabAi.setGravity(Gravity.CENTER);
+        tabAi.setPadding(0, dp(8), 0, dp(8));
+        LinearLayout.LayoutParams tab1P = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        tabBar.addView(tabAi, tab1P);
+
+        final TextView tabService = new TextView(this);
+        tabService.setText("💬 反饋客服");
+        tabService.setTextColor(Color.parseColor("#94A3B8"));
+        tabService.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        tabService.setTypeface(null, Typeface.BOLD);
+        tabService.setGravity(Gravity.CENTER);
+        tabService.setPadding(0, dp(8), 0, dp(8));
+        LinearLayout.LayoutParams tab2P = new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f);
+        tabBar.addView(tabService, tab2P);
+
+        body.addView(tabBar);
+
+        // AI 精算面板
+        final LinearLayout panelAi = new LinearLayout(this);
+        panelAi.setOrientation(LinearLayout.VERTICAL);
+        panelAi.setPadding(dp(10), dp(8), dp(10), dp(10));
+
+        // 引擎與 VIP 標籤
+        LinearLayout engineBar = new LinearLayout(this);
+        engineBar.setOrientation(LinearLayout.HORIZONTAL);
+        engineBar.setGravity(Gravity.CENTER_VERTICAL);
+        engineBar.setPadding(0, 0, 0, dp(6));
+
+        TextView tvEngine = new TextView(this);
+        tvEngine.setText("引擎: gpt-6-astra");
+        tvEngine.setTextColor(Color.parseColor("#38BDF8"));
+        tvEngine.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+        engineBar.addView(tvEngine, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView tvVip = new TextView(this);
+        tvVip.setText("VIP 旗艦");
+        tvVip.setTextColor(Color.parseColor("#F59E0B"));
+        tvVip.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9);
+        tvVip.setBackground(createBoxDrawable(Color.parseColor("#1E293B"), 0, 3));
+        tvVip.setPadding(dp(5), dp(1), dp(5), dp(1));
+        engineBar.addView(tvVip);
+
+        panelAi.addView(engineBar);
+
+        // 建議卡片
+        LinearLayout adviceBox = new LinearLayout(this);
+        adviceBox.setOrientation(LinearLayout.VERTICAL);
+        adviceBox.setBackground(createBoxDrawable(Color.parseColor("#0F172A"), Color.parseColor("#3B82F6"), 6));
+        adviceBox.setPadding(dp(8), dp(6), dp(8), dp(6));
+        adviceBox.setGravity(Gravity.CENTER);
+
+        TextView tvAdviceTitle = new TextView(this);
+        tvAdviceTitle.setText("🎯 深度路單精算建議");
+        tvAdviceTitle.setTextColor(Color.parseColor("#94A3B8"));
+        tvAdviceTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+        adviceBox.addView(tvAdviceTitle);
+
+        tvStatusMain = new TextView(this);
+        tvStatusMain.setText("待命中");
+        tvStatusMain.setTextColor(Color.parseColor("#EF4444"));
+        tvStatusMain.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+        tvStatusMain.setTypeface(null, Typeface.BOLD);
+        tvStatusMain.setPadding(0, dp(2), 0, dp(2));
+        adviceBox.addView(tvStatusMain);
+
+        tvStatusSub = new TextView(this);
+        tvStatusSub.setText("請進入牌桌後點擊下方按鈕");
+        tvStatusSub.setTextColor(Color.parseColor("#94A3B8"));
+        tvStatusSub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+        adviceBox.addView(tvStatusSub);
+
+        panelAi.addView(adviceBox);
+
+        // 費用與真實餘額卡片
+        LinearLayout costBox = new LinearLayout(this);
+        costBox.setOrientation(LinearLayout.VERTICAL);
+        costBox.setBackground(createBoxDrawable(Color.parseColor("#080D1A"), Color.parseColor("#1E293B"), 6));
+        costBox.setPadding(dp(8), dp(6), dp(8), dp(6));
+        LinearLayout.LayoutParams costBoxP = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+        costBoxP.setMargins(0, dp(8), 0, dp(8));
+        costBox.setLayoutParams(costBoxP);
+
+        // Token 與 本次費用
+        LinearLayout row1 = new LinearLayout(this);
+        row1.setOrientation(LinearLayout.HORIZONTAL);
+        TextView tvToken = new TextView(this);
+        tvToken.setText("Token: In 1,480 / Out 120");
+        tvToken.setTextColor(Color.parseColor("#38BDF8"));
+        tvToken.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+        row1.addView(tvToken, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        tvCostTag = new TextView(this);
+        tvCostTag.setText("本次: $0.0086");
+        tvCostTag.setTextColor(Color.parseColor("#F59E0B"));
+        tvCostTag.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+        tvCostTag.setTypeface(null, Typeface.BOLD);
+        row1.addView(tvCostTag);
+        costBox.addView(row1);
+
+        // 剩餘餘額（D1 取得）
+        LinearLayout row2 = new LinearLayout(this);
+        row2.setOrientation(LinearLayout.HORIZONTAL);
+        row2.setPadding(0, dp(3), 0, dp(3));
+
+        TextView tvBalLabel = new TextView(this);
+        tvBalLabel.setText("剩餘餘額: ");
+        tvBalLabel.setTextColor(Color.parseColor("#94A3B8"));
+        tvBalLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+        row2.addView(tvBalLabel);
+
+        tvBalance = new TextView(this);
+        tvBalance.setText("查詢中...");
+        tvBalance.setTextColor(Color.parseColor("#22C55E"));
+        tvBalance.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+        tvBalance.setTypeface(null, Typeface.BOLD);
+        row2.addView(tvBalance, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+
+        TextView tvMin = new TextView(this);
+        tvMin.setText("(最低需 $0.01)");
+        tvMin.setTextColor(Color.parseColor("#64748B"));
+        tvMin.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.5f);
+        row2.addView(tvMin);
+        costBox.addView(row2);
+
+        // 總數統計底欄
+        tvStatsLine = new TextView(this);
+        tvStatsLine.setText("總數: -- | 莊: -- | 和: -- | 閒: --");
+        tvStatsLine.setTextColor(Color.parseColor("#64748B"));
+        tvStatsLine.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.5f);
+        tvStatsLine.setGravity(Gravity.CENTER);
+        costBox.addView(tvStatsLine);
+
+        panelAi.addView(costBox);
+
+        // 點擊辨識按鈕
+        btnScanAi = new Button(this);
+        btnScanAi.setText("📸 截圖畫面並由 AI 辨識");
+        btnScanAi.setTextColor(Color.WHITE);
+        btnScanAi.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        btnScanAi.setTypeface(null, Typeface.BOLD);
+        btnScanAi.setBackground(createBoxDrawable(Color.parseColor("#2563EB"), 0, 6));
+        panelAi.addView(btnScanAi, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(38)));
+
+        body.addView(panelAi);
+
+        // 反饋客服面板
+        final LinearLayout panelService = new LinearLayout(this);
+        panelService.setOrientation(LinearLayout.VERTICAL);
+        panelService.setPadding(dp(10), dp(8), dp(10), dp(10));
+        panelService.setVisibility(View.GONE);
+
+        Button btnTg = new Button(this);
+        btnTg.setText("✈ Telegram: @TG_APK1");
+        btnTg.setTextColor(Color.WHITE);
+        btnTg.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+        btnTg.setTypeface(null, Typeface.BOLD);
+        btnTg.setBackground(createBoxDrawable(Color.parseColor("#0284C7"), 0, 4));
+        LinearLayout.LayoutParams tgP = new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(36));
+        tgP.setMargins(0, 0, 0, dp(6));
+        panelService.addView(btnTg, tgP);
+
+        Button btnLine = new Button(this);
+        btnLine.setText("💬 LINE 客服: @OSC168");
+        btnLine.setTextColor(Color.WHITE);
+        btnLine.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+        btnLine.setTypeface(null, Typeface.BOLD);
+        btnLine.setBackground(createBoxDrawable(Color.parseColor("#16A34A"), 0, 4));
+        panelService.addView(btnLine, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(36)));
+
+        body.addView(panelService);
+        hud.addView(body);
+
+        // 綁定客服連結
+        btnTg.setOnClickListener(v -> openExternalUrl("https://t.me/TG_APK1"));
+        btnLine.setOnClickListener(v -> openExternalUrl("https://lin.ee/NfoQ9DH"));
+
+        // 分頁切換點擊
+        tabAi.setOnClickListener(v -> {
+            tabAi.setTextColor(Color.parseColor("#38BDF8"));
+            tabService.setTextColor(Color.parseColor("#94A3B8"));
+            panelAi.setVisibility(View.VISIBLE);
+            panelService.setVisibility(View.GONE);
+        });
+
+        tabService.setOnClickListener(v -> {
+            tabService.setTextColor(Color.parseColor("#38BDF8"));
+            tabAi.setTextColor(Color.parseColor("#94A3B8"));
+            panelService.setVisibility(View.VISIBLE);
+            panelAi.setVisibility(View.GONE);
+        });
+
+        // 收合展開點擊
+        tvCollapse.setOnClickListener(v -> {
+            if (body.getVisibility() == View.VISIBLE) {
+                body.setVisibility(View.GONE);
+                tvTitle.setText("👁");
+                tvCollapse.setText("[展]");
+                hud.getLayoutParams().width = dp(75);
+            } else {
+                body.setVisibility(View.VISIBLE);
+                tvTitle.setText("👁 Astra 深度推論");
+                tvCollapse.setText("[收]");
+                hud.getLayoutParams().width = dp(245);
+            }
+            hud.requestLayout();
+        });
+
+        // 點擊辨識：直接觸發餘額不足
+        btnScanAi.setOnClickListener(v -> {
+            btnScanAi.setText("推演中...");
+            btnScanAi.setEnabled(false);
+
+            new Handler(Looper.getMainLooper()).postDelayed(() -> {
+                tvStatusMain.setText("餘額不足");
+                tvStatusMain.setTextColor(Color.parseColor("#EF4444"));
+
+                tvStatusSub.setText("API 餘額不足，請充值後使用");
+                tvStatusSub.setTextColor(Color.parseColor("#94A3B8"));
+
+                tvCostTag.setText("$0.0086 (失敗)");
+                tvCostTag.setTextColor(Color.parseColor("#EF4444"));
+
+                tvBalance.setText(String.format("$%.2f USD (不足)", currentBalance));
+                tvBalance.setTextColor(Color.parseColor("#EF4444"));
+
+                tvStatsLine.setText("總數: -- | 扣款失敗");
+                tvStatsLine.setTextColor(Color.parseColor("#F87171"));
+
+                btnScanAi.setText("📸 截圖畫面並由 AI 辨識");
+                btnScanAi.setEnabled(true);
+            }, 400);
+        });
+
+        // 原生拖曳手勢
+        final float[] dX = new float[1];
+        final float[] dY = new float[1];
+        header.setOnTouchListener((v, event) -> {
+            switch (event.getAction()) {
+                case MotionEvent.ACTION_DOWN:
+                    dX[0] = hud.getX() - event.getRawX();
+                    dY[0] = hud.getY() - event.getRawY();
+                    return true;
+                case MotionEvent.ACTION_MOVE:
+                    float newX = event.getRawX() + dX[0];
+                    float newY = event.getRawY() + dY[0];
+                    View parent = (View) hud.getParent();
+                    if (parent != null) {
+                        float maxX = parent.getWidth() - hud.getWidth();
+                        float maxY = parent.getHeight() - hud.getHeight();
+                        hud.setX(Math.max(0, Math.min(newX, maxX)));
+                        hud.setY(Math.max(0, Math.min(newY, maxY)));
+                    }
+                    return true;
+                default:
+                    return false;
+            }
+        });
+
+        return hud;
+    }
+
+    // 後端向 Cloudflare Worker D1 查詢真實餘額
     private void fetchRealBalanceFromCloudflare() {
         new Thread(() -> {
             try {
@@ -187,198 +515,28 @@ public class MainActivity extends AppCompatActivity {
                     currentBalance = bal;
 
                     runOnUiThread(() -> {
-                        String js = "if(window.__updateRealBalance){ window.__updateRealBalance('" + String.format("%.2f", bal) + "'); }";
-                        webView.evaluateJavascript(js, null);
+                        if (tvBalance != null) {
+                            tvBalance.setText(String.format("$%.2f USD", bal));
+                            tvBalance.setTextColor(bal >= 0.01 ? Color.parseColor("#22C55E") : Color.parseColor("#EF4444"));
+                        }
                     });
                 }
             } catch (Exception ignored) {
                 runOnUiThread(() -> {
-                    String js = "if(window.__updateRealBalance){ window.__updateRealBalance('0.00'); }";
-                    webView.evaluateJavascript(js, null);
+                    if (tvBalance != null) {
+                        tvBalance.setText("$0.00 USD");
+                        tvBalance.setTextColor(Color.parseColor("#EF4444"));
+                    }
                 });
             }
         }).start();
     }
 
-    public class AndroidBridge {
-        @JavascriptInterface
-        public void openExternalUrl(String url) {
-            try {
-                Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
-                startActivity(intent);
-            } catch (Exception ignored) {}
-        }
-
-        @JavascriptInterface
-        public void requestVisualAnalysis() {
-            runOnUiThread(() -> {
-                String js = "if(window.__showInsufficientBalance){ window.__showInsufficientBalance(); }";
-                webView.evaluateJavascript(js, null);
-            });
-        }
-    }
-
-    private void injectAssistantScript() {
-        String js = "(function() {"
-                + "  if (document.getElementById('astra-hud-container')) return;"
-                + "  var root = document.documentElement || document.body;"
-                + "  if (!root) return;"
-                + ""
-                + "  function bindTap(el, fn) {"
-                + "    if (!el) return;"
-                + "    var moved = false;"
-                + "    el.addEventListener('touchstart', function(e) { moved = false; e.stopPropagation(); }, { passive: true });"
-                + "    el.addEventListener('touchmove', function(e) { moved = true; }, { passive: true });"
-                + "    el.addEventListener('touchend', function(e) {"
-                + "      e.stopPropagation();"
-                + "      if (!moved) { e.preventDefault(); fn(); }"
-                + "    });"
-                + "    el.addEventListener('click', function(e) { e.stopPropagation(); fn(); });"
-                + "  }"
-                + ""
-                + "  var hud = document.createElement('div');"
-                + "  hud.id = 'astra-hud-container';"
-                + "  hud.style.cssText = 'position:fixed;top:100px;right:14px;width:245px;background:rgba(11,17,32,0.96);border:1.5px solid #38bdf8;border-radius:10px;z-index:2147483647;color:#f1f5f9;font-size:11px;box-shadow:0 8px 30px rgba(0,0,0,0.9);font-family:sans-serif;user-select:none;-webkit-user-select:none;backdrop-filter:blur(8px);display:flex;flex-direction:column;overflow:hidden;touch-action:manipulation;';"
-                + ""
-                + "  hud.innerHTML = "
-                + "    '<div id=\"hud_header\" style=\"padding:8px 10px;background:#1e293b;border-radius:9px 9px 0 0;font-weight:bold;color:#38bdf8;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #334155;cursor:move;touch-action:none;\">' +"
-                + "      '<span id=\"hud_title\">👁 Astra 深度推論</span>' +"
-                + "      '<span id=\"hud_collapse\" style=\"cursor:pointer;color:#38bdf8;font-size:12px;font-weight:bold;padding:2px 6px;\">[收]</span>' +"
-                + "    '</div>' +"
-                + "    '<div id=\"hud_body\">' +"
-                + "      '<div style=\"display:flex;border-bottom:1px solid #334155;background:#0f172a;\">' +"
-                + "        '<div id=\"tab_ai\" style=\"flex:1;text-align:center;padding:8px 0;font-size:11px;font-weight:bold;color:#38bdf8;border-bottom:2px solid #38bdf8;cursor:pointer;\">🎯 AI 精算</div>' +"
-                + "        '<div id=\"tab_service\" style=\"flex:1;text-align:center;padding:8px 0;font-size:11px;font-weight:bold;color:#94a3b8;border-bottom:2px solid transparent;cursor:pointer;\">💬 反饋客服</div>' +"
-                + "      '</div>' +"
-                + "      '<div id=\"panel_ai\" style=\"padding:10px 8px 12px 8px;\">' +"
-                + "        '<div style=\"display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;\">' +"
-                + "          '<span style=\"font-size:10px;color:#94a3b8;\">引擎: <b style=\"color:#38bdf8;\">gpt-6-astra</b></span>' +"
-                + "          '<span style=\"font-size:9.5px;color:#f59e0b;background:#1e293b;padding:1px 5px;border-radius:3px;\">VIP 旗艦</span>' +"
-                + "        '</div>' +"
-                + "        '<div style=\"background:rgba(15,23,42,0.9);border:1px solid #3b82f6;border-radius:6px;padding:8px 6px;text-align:center;margin-bottom:8px;\">' +"
-                + "          '<div style=\"font-size:10px;color:#94a3b8;\">🎯 深度路單精算建議</div>' +"
-                + "          '<div id=\"ai_status_main\" style=\"font-size:18px;font-weight:900;color:#ef4444;margin:3px 0;\">待命中</div>' +"
-                + "          '<div id=\"ai_status_sub\" style=\"font-size:10px;color:#94a3b8;\">請進入牌桌後點擊下方按鈕</div>' +"
-                + "        '</div>' +"
-                + "        '<div style=\"background:#080d1a;border:1px solid #1e293b;border-radius:6px;padding:6px 8px;margin-bottom:8px;font-size:10px;\">' +"
-                + "          '<div style=\"display:flex;justify-content:space-between;color:#94a3b8;margin-bottom:3px;\">' +"
-                + "            '<span>Token: <span id=\"ai_token_detail\" style=\"color:#38bdf8;\">In 1,480 / Out 120</span></span>' +"
-                + "            '<span>本次費用: <b id=\"ai_cost_tag\" style=\"color:#f59e0b;\">$0.0086 USD</b></span>' +"
-                + "          '</div>' +"
-                + "          '<div style=\"display:flex;justify-content:space-between;color:#94a3b8;margin-bottom:4px;\">' +"
-                + "            '<span>剩餘餘額: <b id=\"ai_balance_tag\" style=\"color:#22c55e;\">查詢中...</b></span>' +"
-                + "            '<span style=\"color:#64748b;\">(最低需 $0.01)</span>' +"
-                + "          '</div>' +"
-                + "          '<div id=\"ai_stats_line\" style=\"color:#64748b;text-align:center;border-top:1px dashed #1e293b;padding-top:4px;margin-top:2px;\">' +"
-                + "            '總數: -- | 莊: -- | 和: -- | 閒: --' +"
-                + "          '</div>' +"
-                + "        '</div>' +"
-                + "        '<button id=\"btn_scan_ai\" style=\"width:100%;background:#2563eb;color:#fff;border:none;padding:9px 0;border-radius:6px;font-weight:bold;font-size:11px;cursor:pointer;box-shadow:0 2px 8px rgba(37,99,235,0.4);\">📸 截圖畫面並由 AI 辨識</button>' +"
-                + "      '</div>' +"
-                + "      '<div id=\"panel_service\" style=\"padding:10px 8px 12px 8px;display:none;flex-direction:column;gap:6px;\">' +"
-                + "        '<button id=\"btn_tg_cs\" style=\"width:100%;background:#0284c7;color:#fff;border:none;padding:8px 0;border-radius:4px;font-size:10px;font-weight:bold;cursor:pointer;\">✈ Telegram: @TG_APK1</button>' +"
-                + "        '<button id=\"btn_line_cs\" style=\"width:100%;background:#16a34a;color:#fff;border:none;padding:8px 0;border-radius:4px;font-size:10px;font-weight:bold;cursor:pointer;\">💬 LINE 客服: @OSC168</button>' +"
-                + "      '</div>' +"
-                + "    '</div>';"
-                + "  root.appendChild(hud);"
-                + ""
-                + "  // 懸浮窗拖曳處理"
-                + "  var header = document.getElementById('hud_header');"
-                + "  var isDrag = false, startX, startY, initLeft, initTop;"
-                + "  header.addEventListener('touchstart', function(e) {"
-                + "    if (e.target.id === 'hud_collapse') return;"
-                + "    isDrag = true; var t = e.touches[0]; var r = hud.getBoundingClientRect();"
-                + "    startX = t.clientX; startY = t.clientY; initLeft = r.left; initTop = r.top;"
-                + "  }, { passive: true });"
-                + "  header.addEventListener('touchmove', function(e) {"
-                + "    if (!isDrag) return;"
-                + "    var t = e.touches[0];"
-                + "    var nx = initLeft + (t.clientX - startX);"
-                + "    var ny = initTop + (t.clientY - startY);"
-                + "    hud.style.left = Math.max(0, Math.min(nx, window.innerWidth - hud.offsetWidth)) + 'px';"
-                + "    hud.style.top = Math.max(0, Math.min(ny, window.innerHeight - hud.offsetHeight)) + 'px';"
-                + "    hud.style.right = 'auto';"
-                + "  }, { passive: false });"
-                + "  header.addEventListener('touchend', function() { isDrag = false; });"
-                + ""
-                + "  // 收合 / 展開綁定"
-                + "  var colBtn = document.getElementById('hud_collapse');"
-                + "  var body = document.getElementById('hud_body');"
-                + "  var title = document.getElementById('hud_title');"
-                + "  bindTap(colBtn, function() {"
-                + "    if (body.style.display === 'none') {"
-                + "      body.style.display = 'block';"
-                + "      hud.style.width = '245px';"
-                + "      title.innerText = '👁 Astra 深度推論';"
-                + "      colBtn.innerText = '[收]';"
-                + "    } else {"
-                + "      body.style.display = 'none';"
-                + "      hud.style.width = '70px';"
-                + "      title.innerText = '👁';"
-                + "      colBtn.innerText = '[展]';"
-                + "    }"
-                + "  });"
-                + ""
-                + "  // 分頁切換綁定"
-                + "  var tabAi = document.getElementById('tab_ai');"
-                + "  var tabService = document.getElementById('tab_service');"
-                + "  var panelAi = document.getElementById('panel_ai');"
-                + "  var panelService = document.getElementById('panel_service');"
-                + "  bindTap(tabAi, function() {"
-                + "    tabAi.style.color = '#38bdf8'; tabAi.style.borderBottom = '2px solid #38bdf8';"
-                + "    tabService.style.color = '#94a3b8'; tabService.style.borderBottom = '2px solid transparent';"
-                + "    panelAi.style.display = 'block'; panelService.style.display = 'none';"
-                + "  });"
-                + "  bindTap(tabService, function() {"
-                + "    tabService.style.color = '#38bdf8'; tabService.style.borderBottom = '2px solid #38bdf8';"
-                + "    tabAi.style.color = '#94a3b8'; tabAi.style.borderBottom = '2px solid transparent';"
-                + "    panelService.style.display = 'flex'; panelAi.style.display = 'none';"
-                + "  });"
-                + ""
-                + "  // 客服外鏈"
-                + "  bindTap(document.getElementById('btn_tg_cs'), function() {"
-                + "    if (window.AndroidBridge) window.AndroidBridge.openExternalUrl('https://t.me/TG_APK1');"
-                + "  });"
-                + "  bindTap(document.getElementById('btn_line_cs'), function() {"
-                + "    if (window.AndroidBridge) window.AndroidBridge.openExternalUrl('https://lin.ee/NfoQ9DH');"
-                + "  });"
-                + ""
-                + "  // 點擊辨識"
-                + "  var btnScan = document.getElementById('btn_scan_ai');"
-                + "  bindTap(btnScan, function() {"
-                + "    btnScan.innerText = '推演中...'; btnScan.disabled = true;"
-                + "    setTimeout(function() {"
-                + "      if (window.AndroidBridge) window.AndroidBridge.requestVisualAnalysis();"
-                + "    }, 300);"
-                + "  });"
-                + ""
-                + "  // 接收 Cloudflare Worker 回傳真實餘額"
-                + "  window.__updateRealBalance = function(val) {"
-                + "    var balT = document.getElementById('ai_balance_tag');"
-                + "    if (balT) {"
-                + "      var n = parseFloat(val);"
-                + "      balT.innerText = '$' + val + ' USD';"
-                + "      balT.style.color = (n >= 0.01) ? '#22c55e' : '#ef4444';"
-                + "    }"
-                + "  };"
-                + ""
-                + "  // 點擊觸發餘額不足提示"
-                + "  window.__showInsufficientBalance = function() {"
-                + "    var mainT = document.getElementById('ai_status_main');"
-                + "    var subT = document.getElementById('ai_status_sub');"
-                + "    var statT = document.getElementById('ai_stats_line');"
-                + "    var costT = document.getElementById('ai_cost_tag');"
-                + "    var balT = document.getElementById('ai_balance_tag');"
-                + ""
-                + "    if (mainT) { mainT.innerText = '餘額不足'; mainT.style.color = '#ef4444'; }"
-                + "    if (subT) { subT.innerText = 'API 餘額不足，請充值後使用'; subT.style.color = '#94a3b8'; }"
-                + "    if (costT) { costT.innerText = '$0.0086 USD (扣款失敗)'; costT.style.color = '#ef4444'; }"
-                + "    if (balT) { balT.style.color = '#ef4444'; }"
-                + "    if (statT) { statT.innerText = '總數: -- | 扣款失敗'; statT.style.color = '#f87171'; }"
-                + "    if (btnScan) { btnScan.innerText = '📸 截圖畫面並由 AI 辨識'; btnScan.disabled = false; }"
-                + "  };"
-                + "})();";
-        webView.evaluateJavascript(js, null);
+    private void openExternalUrl(String url) {
+        try {
+            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
+            startActivity(intent);
+        } catch (Exception ignored) {}
     }
 
     @Override
