@@ -22,13 +22,11 @@ import android.view.MotionEvent;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
-import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
-import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -175,7 +173,7 @@ public class MainActivity extends AppCompatActivity {
     }
 
     // ==========================================
-    //   核心懸浮服務：含下拉式選單與生效按鈕
+    //   核心懸浮服務：修復縮放與按鈕交互
     // ==========================================
     public static class FloatingService extends Service {
 
@@ -183,11 +181,13 @@ public class MainActivity extends AppCompatActivity {
         private View floatingView;
         private View bubbleView;
         private WindowManager.LayoutParams params;
+        private WindowManager.LayoutParams bubbleParams;
 
         private int windowWidth;
         private int windowHeight;
 
         private String selectedModel = "gpt-6-astra";
+        private String tempSelectedModel = "gpt-6-astra";
         private boolean isVip = false;
 
         private final String[] modelKeys = new String[]{
@@ -204,7 +204,10 @@ public class MainActivity extends AppCompatActivity {
                 "⚡ gpt-6-luna (VIP即時捕捉)"
         };
 
-        private Spinner spinnerModel;
+        private TextView tvSelectedModelLabel;
+        private LinearLayout llDropdownOptions;
+        private Button btnApplyModel;
+
         private TextView tvVipBadge;
         private TextView tvVipAction;
         private TextView tvStatusBig;
@@ -213,6 +216,7 @@ public class MainActivity extends AppCompatActivity {
         private TextView tvDragon7;
         private TextView tvTie;
         private TextView tvPairs;
+        private Button btnAiScan;
 
         private final Handler mainHandler = new Handler(Looper.getMainLooper());
         private SharedPreferences prefs;
@@ -306,7 +310,7 @@ public class MainActivity extends AppCompatActivity {
             btnPlus.setOnClickListener(v -> scaleWindow(1.1f));
             btnCollapse.setOnClickListener(v -> toggleMinimize(true));
 
-            // 2. 內部可捲動內容
+            // 2. 內部滾動區
             ScrollView innerScroll = new ScrollView(this);
             innerScroll.setFillViewport(true);
             LinearLayout.LayoutParams scrollLp = new LinearLayout.LayoutParams(
@@ -339,65 +343,72 @@ public class MainActivity extends AppCompatActivity {
 
             tvVipAction.setOnClickListener(v -> toggleVipState());
 
-            // 3. 模型切換：原生 Spinner + 生效按鈕
+            // 3. 原生可靠下拉式選單與【生效】按鈕
             LinearLayout modelSelectorRow = new LinearLayout(this);
             modelSelectorRow.setOrientation(LinearLayout.HORIZONTAL);
             modelSelectorRow.setGravity(Gravity.CENTER_VERTICAL);
-            modelSelectorRow.setPadding(0, dp(6), 0, dp(6));
+            modelSelectorRow.setPadding(0, dp(6), 0, dp(2));
 
-            spinnerModel = new Spinner(this);
-            spinnerModel.setBackground(createBoxDrawable(Color.parseColor("#1E293B"), Color.parseColor("#334155"), 6));
-            spinnerModel.setPadding(dp(8), dp(4), dp(8), dp(4));
-
-            ArrayAdapter<String> spinnerAdapter = new ArrayAdapter<String>(this, android.R.layout.simple_spinner_item, modelDisplayNames) {
-                @Override
-                public View getView(int position, View convertView, ViewGroup parent) {
-                    View v = super.getView(position, convertView, parent);
-                    if (v instanceof TextView) {
-                        ((TextView) v).setTextColor(Color.WHITE);
-                        ((TextView) v).setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-                        ((TextView) v).setTypeface(null, Typeface.BOLD);
-                    }
-                    return v;
-                }
-
-                @Override
-                public View getDropDownView(int position, View convertView, ViewGroup parent) {
-                    View v = super.getDropDownView(position, convertView, parent);
-                    v.setBackgroundColor(Color.parseColor("#1E293B"));
-                    if (v instanceof TextView) {
-                        ((TextView) v).setTextColor(Color.WHITE);
-                        ((TextView) v).setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
-                        ((TextView) v).setPadding(dp(12), dp(12), dp(12), dp(12));
-                    }
-                    return v;
-                }
-            };
-            spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
-            spinnerModel.setAdapter(spinnerAdapter);
-            spinnerModel.setSelection(1);
-
+            tvSelectedModelLabel = new TextView(this);
+            tvSelectedModelLabel.setText("👑 gpt-6-astra (VIP視覺旗艦) ▼");
+            tvSelectedModelLabel.setTextColor(Color.WHITE);
+            tvSelectedModelLabel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+            tvSelectedModelLabel.setTypeface(null, Typeface.BOLD);
+            tvSelectedModelLabel.setGravity(Gravity.CENTER_VERTICAL);
+            tvSelectedModelLabel.setBackground(createBoxDrawable(Color.parseColor("#1E293B"), Color.parseColor("#38BDF8"), 6));
+            tvSelectedModelLabel.setPadding(dp(8), dp(6), dp(8), dp(6));
             LinearLayout.LayoutParams spLp = new LinearLayout.LayoutParams(0, dp(38), 1f);
-            modelSelectorRow.addView(spinnerModel, spLp);
+            modelSelectorRow.addView(tvSelectedModelLabel, spLp);
 
-            Button btnApplyModel = new Button(this);
+            btnApplyModel = new Button(this);
             btnApplyModel.setText("生效");
             btnApplyModel.setTextColor(Color.WHITE);
             btnApplyModel.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
             btnApplyModel.setTypeface(null, Typeface.BOLD);
             btnApplyModel.setBackground(createBoxDrawable(Color.parseColor("#0284C7"), Color.parseColor("#38BDF8"), 6));
-            LinearLayout.LayoutParams applyLp = new LinearLayout.LayoutParams(dp(62), dp(38));
+            LinearLayout.LayoutParams applyLp = new LinearLayout.LayoutParams(dp(68), dp(38));
             applyLp.setMargins(dp(6), 0, 0, 0);
             modelSelectorRow.addView(btnApplyModel, applyLp);
 
             scrollContent.addView(modelSelectorRow);
 
-            btnApplyModel.setOnClickListener(v -> applySelectedModel());
+            // 折疊選項清單容器
+            llDropdownOptions = new LinearLayout(this);
+            llDropdownOptions.setOrientation(LinearLayout.VERTICAL);
+            llDropdownOptions.setBackground(createBoxDrawable(Color.parseColor("#0B132B"), Color.parseColor("#1E293B"), 6));
+            llDropdownOptions.setPadding(dp(6), dp(4), dp(6), dp(4));
+            llDropdownOptions.setVisibility(View.GONE);
+
+            for (int i = 0; i < modelDisplayNames.length; i++) {
+                final int index = i;
+                TextView opt = new TextView(this);
+                opt.setText(modelDisplayNames[i]);
+                opt.setTextColor(Color.parseColor("#CBD5E1"));
+                opt.setTextSize(TypedValue.COMPLEX_UNIT_SP, 12);
+                opt.setPadding(dp(8), dp(8), dp(8), dp(8));
+                opt.setOnClickListener(v -> {
+                    tempSelectedModel = modelKeys[index];
+                    tvSelectedModelLabel.setText(modelDisplayNames[index] + " ▼");
+                    llDropdownOptions.setVisibility(View.GONE);
+                });
+                llDropdownOptions.addView(opt);
+            }
+            scrollContent.addView(llDropdownOptions);
+
+            tvSelectedModelLabel.setOnClickListener(v -> {
+                if (llDropdownOptions.getVisibility() == View.VISIBLE) {
+                    llDropdownOptions.setVisibility(View.GONE);
+                } else {
+                    llDropdownOptions.setVisibility(View.VISIBLE);
+                }
+            });
+
+            btnApplyModel.setOnClickListener(v -> applyModelSelection());
 
             // 4. 重置與說明
             LinearLayout actRow = new LinearLayout(this);
             actRow.setOrientation(LinearLayout.HORIZONTAL);
-            actRow.setPadding(0, dp(2), 0, dp(8));
+            actRow.setPadding(0, dp(6), 0, dp(6));
 
             Button btnReset = createOutlineBtn("🔄 重置數據");
             Button btnHelp = createOutlineBtn("📖 使用說明");
@@ -411,9 +422,12 @@ public class MainActivity extends AppCompatActivity {
             scrollContent.addView(actRow);
 
             btnReset.setOnClickListener(v -> resetCard());
-            btnHelp.setOnClickListener(v -> Toast.makeText(this, "請打開路單畫面，點擊下方「AI辨識」進行即時運算！", Toast.LENGTH_LONG).show());
+            btnHelp.setOnClickListener(v -> {
+                tvStatusBig.setText("使用說明");
+                tvStatusSub.setText("請開啟路單，點擊下方「AI辨識」進行即時運算！");
+            });
 
-            // 5. 核心路單建議面板 (含四大機率)
+            // 5. 核心路單建議面板 (四大機率)
             LinearLayout decisionCard = new LinearLayout(this);
             decisionCard.setOrientation(LinearLayout.VERTICAL);
             decisionCard.setBackground(createBoxDrawable(Color.parseColor("#080D1A"), Color.parseColor("#1E293B"), 8));
@@ -461,8 +475,8 @@ public class MainActivity extends AppCompatActivity {
 
             scrollContent.addView(decisionCard);
 
-            // 6. AI 辨識大按鈕
-            Button btnAiScan = new Button(this);
+            // 6. AI 辨識按鈕
+            btnAiScan = new Button(this);
             btnAiScan.setText("📸 截圖畫面並由 AI 辨識");
             btnAiScan.setTextColor(Color.WHITE);
             btnAiScan.setTypeface(null, Typeface.BOLD);
@@ -521,7 +535,7 @@ public class MainActivity extends AppCompatActivity {
             tvDisclaimer.setPadding(0, dp(2), 0, 0);
             scrollContent.addView(tvDisclaimer);
 
-            // 10. 右下角手勢縮放按鈕 (天藍色三角形角標 ◢)
+            // 10. 右下角手勢縮放按鈕 ◢
             TextView resizeHandle = new TextView(this);
             resizeHandle.setText("◢");
             resizeHandle.setTextColor(Color.parseColor("#38BDF8"));
@@ -578,25 +592,23 @@ public class MainActivity extends AppCompatActivity {
             windowManager.addView(floatingView, params);
         }
 
-        private void applySelectedModel() {
-            int pos = spinnerModel.getSelectedItemPosition();
-            if (pos < 0 || pos >= modelKeys.length) return;
-
-            String targetModel = modelKeys[pos];
-
-            if (!targetModel.equals("gpt-4o") && !isVip) {
-                Toast.makeText(this, "🔒 此為 VIP 專屬高階引擎！請先輸入金鑰 OSC-ADMIN-8888 解鎖", Toast.LENGTH_SHORT).show();
-                for (int i = 0; i < modelKeys.length; i++) {
-                    if (modelKeys[i].equals(selectedModel)) {
-                        spinnerModel.setSelection(i);
-                        break;
-                    }
-                }
+        private void applyModelSelection() {
+            if (!tempSelectedModel.equals("gpt-4o") && !isVip) {
+                tvStatusBig.setText("VIP限制");
+                tvStatusBig.setTextColor(Color.parseColor("#EF4444"));
+                tvStatusSub.setText("請輸入金鑰 OSC-ADMIN-8888 解鎖此模型");
                 return;
             }
 
-            this.selectedModel = targetModel;
-            Toast.makeText(this, "✅ 引擎設定已生效: " + targetModel, Toast.LENGTH_SHORT).show();
+            this.selectedModel = tempSelectedModel;
+            btnApplyModel.setText("✓ 生效");
+            btnApplyModel.setBackground(createBoxDrawable(Color.parseColor("#16A34A"), Color.parseColor("#4ADE80"), 6));
+            tvStatusSub.setText("已成功套用模型: " + selectedModel);
+
+            mainHandler.postDelayed(() -> {
+                btnApplyModel.setText("生效");
+                btnApplyModel.setBackground(createBoxDrawable(Color.parseColor("#0284C7"), Color.parseColor("#38BDF8"), 6));
+            }, 1500);
         }
 
         private void scaleWindow(float factor) {
@@ -620,34 +632,65 @@ public class MainActivity extends AppCompatActivity {
             windowManager.updateViewLayout(floatingView, params);
         }
 
+        // 獨立精準迷你圓形懸浮球 (56dp x 56dp)
         private void buildBubbleView() {
             int layoutType = (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) ?
                     WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY : WindowManager.LayoutParams.TYPE_PHONE;
 
-            WindowManager.LayoutParams bParams = new WindowManager.LayoutParams(
-                    dp(52), dp(52),
+            bubbleParams = new WindowManager.LayoutParams(
+                    dp(56), dp(56),
                     layoutType,
                     WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE,
                     PixelFormat.TRANSLUCENT
             );
-            bParams.gravity = Gravity.TOP | Gravity.START;
-            bParams.x = dp(16);
-            bParams.y = dp(200);
+            bubbleParams.gravity = Gravity.TOP | Gravity.START;
+            bubbleParams.x = dp(16);
+            bubbleParams.y = dp(200);
 
             TextView bubble = new TextView(this);
             bubble.setText("👁️");
-            bubble.setTextSize(TypedValue.COMPLEX_UNIT_SP, 22);
+            bubble.setTextSize(TypedValue.COMPLEX_UNIT_SP, 24);
             bubble.setGravity(Gravity.CENTER);
-            bubble.setBackground(createBoxDrawable(Color.parseColor("#0F172A"), Color.parseColor("#38BDF8"), 26));
+            bubble.setBackground(createBoxDrawable(Color.parseColor("#0F172A"), Color.parseColor("#38BDF8"), 28));
 
-            bubble.setOnClickListener(v -> toggleMinimize(false));
+            bubble.setOnTouchListener(new View.OnTouchListener() {
+                private int initX, initY;
+                private float touchX, touchY;
+                private boolean isDrag = false;
+
+                @Override
+                public boolean onTouch(View v, MotionEvent e) {
+                    switch (e.getAction()) {
+                        case MotionEvent.ACTION_DOWN:
+                            initX = bubbleParams.x; initY = bubbleParams.y;
+                            touchX = e.getRawX(); touchY = e.getRawY();
+                            isDrag = false;
+                            return true;
+                        case MotionEvent.ACTION_MOVE:
+                            int dx = (int) (e.getRawX() - touchX);
+                            int dy = (int) (e.getRawY() - touchY);
+                            if (Math.abs(dx) > 10 || Math.abs(dy) > 10) isDrag = true;
+                            bubbleParams.x = initX + dx;
+                            bubbleParams.y = initY + dy;
+                            windowManager.updateViewLayout(bubbleView, bubbleParams);
+                            return true;
+                        case MotionEvent.ACTION_UP:
+                            if (!isDrag) {
+                                toggleMinimize(false);
+                            }
+                            return true;
+                    }
+                    return false;
+                }
+            });
+
             bubbleView = bubble;
         }
 
         private void toggleMinimize(boolean minimize) {
             if (minimize) {
                 windowManager.removeView(floatingView);
-                windowManager.addView(bubbleView, params);
+                windowManager.addView(bubbleView, bubbleParams); // 正確使用 56x56 專屬懸浮球 LayoutParams
             } else {
                 windowManager.removeView(bubbleView);
                 windowManager.addView(floatingView, params);
@@ -661,9 +704,10 @@ public class MainActivity extends AppCompatActivity {
             tvVipAction.setText(isVip ? "[註銷]" : "[解鎖]");
             if (!isVip && !selectedModel.equals("gpt-4o")) {
                 selectedModel = "gpt-4o";
-                spinnerModel.setSelection(0);
+                tempSelectedModel = "gpt-4o";
+                tvSelectedModelLabel.setText(modelDisplayNames[0] + " ▼");
             }
-            Toast.makeText(this, isVip ? "VIP 模式已啟用！已解鎖 ASTRA/SOL/LUNA" : "已註銷，切回一般版", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, isVip ? "VIP 已啟用" : "已切回一般模式", Toast.LENGTH_SHORT).show();
         }
 
         private void resetCard() {
@@ -674,27 +718,34 @@ public class MainActivity extends AppCompatActivity {
             tvDragon7.setText("龍7: --");
             tvTie.setText("和局: --");
             tvPairs.setText("對子: --");
-            Toast.makeText(this, "數據已重置", Toast.LENGTH_SHORT).show();
         }
 
         private void executeAiInference() {
             String apiKey = prefs.getString("openai_key", "");
             if (apiKey.isEmpty()) {
-                Toast.makeText(this, "請先於主程式設定 OpenAI API Key", Toast.LENGTH_SHORT).show();
+                tvStatusBig.setText("需填Key");
+                tvStatusBig.setTextColor(Color.parseColor("#EF4444"));
+                tvStatusSub.setText("請返回 Astra 主畫面填寫 OpenAI API Key (sk-...)");
                 return;
             }
 
-            tvStatusBig.setText("AI 精算中...");
+            tvStatusBig.setText("精算中...");
             tvStatusBig.setTextColor(Color.parseColor("#F59E0B"));
-            tvStatusSub.setText("正在由 " + selectedModel + " 雲端精算盤路與四大機率...");
+            tvStatusSub.setText("由 " + selectedModel + " 雲端深度推演中...");
+
+            btnAiScan.setEnabled(false);
 
             new Thread(() -> {
                 try {
                     String resultJson = callOpenAiDirect(apiKey, selectedModel);
-                    mainHandler.post(() -> updateAiResult(resultJson));
+                    mainHandler.post(() -> {
+                        btnAiScan.setEnabled(true);
+                        updateAiResult(resultJson);
+                    });
                 } catch (Exception e) {
                     final String err = e.getMessage();
                     mainHandler.post(() -> {
+                        btnAiScan.setEnabled(true);
                         tvStatusBig.setText("連線失敗");
                         tvStatusBig.setTextColor(Color.parseColor("#EF4444"));
                         tvStatusSub.setText(err);
@@ -848,6 +899,7 @@ public class MainActivity extends AppCompatActivity {
         public void onDestroy() {
             super.onDestroy();
             if (floatingView != null) windowManager.removeView(floatingView);
+            if (bubbleView != null && bubbleView.isAttachedToWindow()) windowManager.removeView(bubbleView);
         }
     }
 }
