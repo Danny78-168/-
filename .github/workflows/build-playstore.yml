@@ -5,6 +5,10 @@ on:
     branches: [ "main" ]
   workflow_dispatch:
 
+permissions:
+  contents: write
+  actions: read
+
 jobs:
   build-release:
     runs-on: ubuntu-latest
@@ -12,6 +16,8 @@ jobs:
     steps:
       - name: Checkout Source Code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up JDK 17
         uses: actions/setup-java@v4
@@ -32,22 +38,78 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Configure Permanent Keystore
+      - name: Auto-Recover Target Keystore (67:8D:71...)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ -f "release.keystore" ]; then
-            echo "成功載入倉庫中的永久發布金鑰 release.keystore！"
-          else
-            echo "未找到根目錄金鑰，動態生成金鑰（警告：後續更新請固定使用同把金鑰）"
-            keytool -genkeypair -v \
-              -keystore release.keystore \
-              -alias playstore_release_key \
-              -keyalg RSA \
-              -keysize 2048 \
-              -validity 10000 \
-              -storepass AstraSecurePass2026 \
-              -keypass AstraSecurePass2026 \
-              -dname "CN=AstraStudio, OU=Engineering, O=Astra, L=Taipei, ST=Taiwan, C=TW"
-          fi
+          python3 -c "
+          import os, json, subprocess, glob, shutil
+
+          TARGET_SHA1 = '678D71669FF1905A66D50E6A99773A469ED36E48'
+
+          def check_keystore(path):
+              try:
+                  out = subprocess.check_output(
+                      ['keytool', '-list', '-v', '-keystore', path, '-storepass', 'AstraSecurePass2026'],
+                      text=True, stderr=subprocess.STDOUT
+                  )
+                  clean_out = out.replace(':', '').replace(' ', '').upper()
+                  return TARGET_SHA1 in clean_out
+              except Exception:
+                  return False
+
+          found = False
+          if os.path.exists('release.keystore') and check_keystore('release.keystore'):
+              print('本地已存在目標金鑰！')
+              found = True
+
+          if not found:
+              print('正在自歷史 Artifacts 中檢索 67:8D:71... 金鑰...')
+              try:
+                  out = subprocess.check_output(['gh', 'api', 'repos/:owner/:repo/actions/artifacts?per_page=100'], text=True)
+                  artifacts = json.loads(out).get('artifacts', [])
+                  backup_arts = [a for a in artifacts if a.get('name') == 'Release-Keystore-Backup']
+                  
+                  for art in backup_arts:
+                      art_id = art['id']
+                      tmp_dir = f'/tmp/art_{art_id}'
+                      os.makedirs(tmp_dir, exist_ok=True)
+                      zip_file = f'/tmp/art_{art_id}.zip'
+                      
+                      subprocess.run(f'gh api repos/:owner/:repo/actions/artifacts/{art_id}/zip > {zip_file}', shell=True, check=True)
+                      subprocess.run(['unzip', '-q', '-o', zip_file, '-d', tmp_dir], check=True)
+                      
+                      candidates = glob.glob(f'{tmp_dir}/**/*.keystore', recursive=True)
+                      for cand in candidates:
+                          if check_keystore(cand):
+                              print(f'成功自 Artifact #{art_id} 尋回目標金鑰！')
+                              shutil.copyfile(cand, 'release.keystore')
+                              found = True
+                              break
+                      if found:
+                          break
+              except Exception as e:
+                  print(f'檢索發生錯誤: {e}')
+
+          if not found and not os.path.exists('release.keystore'):
+              print('未找到歷史備份，動態生成新金鑰...')
+              subprocess.run([
+                  'keytool', '-genkeypair', '-v',
+                  '-keystore', 'release.keystore',
+                  '-alias', 'playstore_release_key',
+                  '-keyalg', 'RSA', '-keysize', '2048', '-validity', '10000',
+                  '-storepass', 'AstraSecurePass2026',
+                  '-keypass', 'AstraSecurePass2026',
+                  '-dname', 'CN=AstraStudio, OU=Engineering, O=Astra, L=Taipei, ST=Taiwan, C=TW'
+              ], check=True)
+          "
+
+          # 自動將尋回的金鑰提交鎖定至倉庫
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add release.keystore || true
+          git commit -m "chore: lock official Google Play release keystore" || true
+          git push origin main || true
 
       - name: Auto-Sanitize Code, Rebuild Icon & Configure Project
         shell: python
