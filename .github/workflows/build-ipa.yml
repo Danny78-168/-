@@ -15,7 +15,7 @@ jobs:
 
       - name: Compile and Package IPA
         run: |
-          # 1. 自動深度清洗 ViewController.swift
+          # 1. 自動清洗代碼並切換為「直接提示餘額不足」（不發送 gpt-4o 請求）
           python3 -c "
           import os, re, unicodedata
 
@@ -24,17 +24,14 @@ jobs:
               with open(path, 'rb') as f:
                   raw = f.read()
 
-              # 移除 UTF-8 / UTF-16 BOM 標頭
-              if raw.startswith(b'\xef\xbb\xbf'):
-                  raw = raw[3:]
-              elif raw.startswith(b'\xff\xfe'):
-                  raw = raw.decode('utf-16le').encode('utf-8')
-              elif raw.startswith(b'\xfe\xff'):
-                  raw = raw.decode('utf-16be').encode('utf-8')
+              # 處理 BOM 標頭
+              if raw.startswith(b'\xef\xbb\xbf'): raw = raw[3:]
+              elif raw.startswith(b'\xff\xfe'): raw = raw.decode('utf-16le').encode('utf-8')
+              elif raw.startswith(b'\xfe\xff'): raw = raw.decode('utf-16be').encode('utf-8')
 
               text = raw.decode('utf-8', errors='ignore')
 
-              # 消除所有 AI 引用標籤 (如、)
+              # 徹底過濾所有 AI 引用標籤與 span 標籤
               tag_cite = 'c' + 'ite'
               tag_source = 's' + 'ource'
               tag_span = 's' + 'pan'
@@ -45,7 +42,7 @@ jobs:
               text = re.sub(r'\[\/?' + tag_span + r'[^\]]*\]', '', text)
               text = re.sub(r'\((?:start|end)_' + tag_span + r'\)', '', text)
 
-              # Unicode NFKC 正規化（消除全形空白與特殊字元）
+              # Unicode 正規化
               text = unicodedata.normalize('NFKC', text)
               text = re.sub(r'[\u00a0\u1680\u180e\u2000-\u200b\u202f\u205f\u3000\ufeff]', ' ', text)
               text = re.sub(r'[\u200b-\u200d\u2060]', '', text)
@@ -60,15 +57,41 @@ jobs:
                       lines[i] = '    private var webView: WKWebView!'
               text = '\n'.join(lines)
 
+              # 阻斷外部 API 請求：進入分析時直接觸發餘額不足
+              target_trigger = 'guard let url = URL(string: \"https://api.openai.com/v1/responses\") else { return }'
+              mock_response = '''DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in
+                  self?.isAnalyzing = false
+                  self?.updateHUDWithError(\"餘額不足\")
+              }
+              if true { return }'''
+
+              if target_trigger in text:
+                  text = text.replace(target_trigger, mock_response)
+              else:
+                  # 若有其他端點形式，依函數名稱直接替換首行
+                  text = re.sub(
+                      r'(private\s+func\s+callOpenAIAstra[^{]*\{)',
+                      r'\1\n        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { [weak self] in self?.isAnalyzing = false; self?.updateHUDWithError(\"餘額不足\") }\n        if true { return }',
+                      text,
+                      count=1
+                  )
+
+              # 替換 updateHUDWithError：直接於懸浮面板顯示【餘額不足】
+              target_hud = 'let js = \"window.__updateAIError && window.__updateAIError(\'\\(msg)\');\"'
+              new_hud_js = '''let js = \"var t = document.getElementById(\'ai_pick_target\'); if(t){ t.innerText = \'餘額不足\'; t.style.color = \'#ef4444\'; } var d = document.getElementById(\'ai_pick_desc\'); if(d){ d.innerText = \'API 餘額不足，請充值後使用\'; d.style.color = \'#94a3b8\'; } var s = document.getElementById(\'hud_score\'); if(s){ s.innerText = \'扣款失敗\'; } var b = document.getElementById(\'btn_do_ai\'); if(b){ b.innerText = \'📸 截圖畫面並由 AI 辨識\'; b.disabled = false; }\"'''
+
+              if target_hud in text:
+                  text = text.replace(target_hud, new_hud_js)
+
               with open(path, 'w', encoding='utf-8') as f:
                   f.write(text)
-              print('ViewController.swift 已徹底清洗乾淨！')
+              print('已成功套用【直接提示餘額不足】邏輯，OpenAI 請求已徹底關閉！')
           "
 
           mkdir -p build/Payload/AstraAssistant.app
           SDK_PATH=$(xcrun --sdk iphoneos --show-sdk-path)
 
-          # 2. 自動補齊 iOS 啟動入口 (AppDelegate)
+          # 2. 自動補齊 iOS 啟動入口
           cat << 'EOF' > ios/AppDelegate.swift
           import UIKit
 
