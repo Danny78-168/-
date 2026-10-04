@@ -339,15 +339,13 @@ public class MainActivity extends AppCompatActivity {
 
             tvVipAction.setOnClickListener(v -> toggleVipState());
 
-            // ========================================================
-            // 3. 模型切換：下拉式選單 (Spinner) + 生效按鈕
-            // ========================================================
+            // 3. 模型切換：原生 Spinner + 生效按鈕（修復主題依賴錯誤）
             LinearLayout modelSelectorRow = new LinearLayout(this);
             modelSelectorRow.setOrientation(LinearLayout.HORIZONTAL);
             modelSelectorRow.setGravity(Gravity.CENTER_VERTICAL);
             modelSelectorRow.setPadding(0, dp(6), 0, dp(6));
 
-            spinnerModel = new Spinner(new androidx.appcompat.view.ContextThemeWrapper(this, androidx.appcompat.R.style.Theme_AppCompat_Dark));
+            spinnerModel = new Spinner(this);
             spinnerModel.setBackground(createBoxDrawable(Color.parseColor("#1E293B"), Color.parseColor("#334155"), 6));
             spinnerModel.setPadding(dp(8), dp(4), dp(8), dp(4));
 
@@ -377,14 +375,11 @@ public class MainActivity extends AppCompatActivity {
             };
             spinnerAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
             spinnerModel.setAdapter(spinnerAdapter);
-
-            // 預設選中當前啟用的模型 (gpt-6-astra 為第 1 項)
             spinnerModel.setSelection(1);
 
             LinearLayout.LayoutParams spLp = new LinearLayout.LayoutParams(0, dp(38), 1f);
             modelSelectorRow.addView(spinnerModel, spLp);
 
-            // 生效按鈕
             Button btnApplyModel = new Button(this);
             btnApplyModel.setText("生效");
             btnApplyModel.setTextColor(Color.WHITE);
@@ -461,7 +456,7 @@ public class MainActivity extends AppCompatActivity {
             tvTie = createProbText("和局: --");
             tvPairs = createProbText("對子: --");
             probRow2.addView(tvTie, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
-            probRow2.addView(tvPairs, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+            probRow2.addView(tvPairs, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
             decisionCard.addView(probRow2);
 
             scrollContent.addView(decisionCard);
@@ -591,7 +586,6 @@ public class MainActivity extends AppCompatActivity {
 
             if (!targetModel.equals("gpt-4o") && !isVip) {
                 Toast.makeText(this, "🔒 此為 VIP 專屬高階引擎！請先輸入金鑰 OSC-ADMIN-8888 解鎖", Toast.LENGTH_SHORT).show();
-                // 恢復為當前生效之模型選項
                 for (int i = 0; i < modelKeys.length; i++) {
                     if (modelKeys[i].equals(selectedModel)) {
                         spinnerModel.setSelection(i);
