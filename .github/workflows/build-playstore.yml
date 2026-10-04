@@ -25,6 +25,11 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
 
+      - name: Set up Android SDK Platform 36
+        run: |
+          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
+          $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager "platforms;android-36" "build-tools;34.0.0" || true
+
       - name: Set up Python & Pillow
         uses: actions/setup-python@v5
         with:
@@ -90,21 +95,8 @@ jobs:
                           break
               except Exception as e:
                   print(f'檢索發生錯誤: {e}')
-
-          if not found and not os.path.exists('release.keystore'):
-              print('未找到歷史備份，動態生成新金鑰...')
-              subprocess.run([
-                  'keytool', '-genkeypair', '-v',
-                  '-keystore', 'release.keystore',
-                  '-alias', 'playstore_release_key',
-                  '-keyalg', 'RSA', '-keysize', '2048', '-validity', '10000',
-                  '-storepass', 'AstraSecurePass2026',
-                  '-keypass', 'AstraSecurePass2026',
-                  '-dname', 'CN=AstraStudio, OU=Engineering, O=Astra, L=Taipei, ST=Taiwan, C=TW'
-              ], check=True)
           "
 
-          # 自動將尋回的金鑰提交鎖定至倉庫
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add release.keystore || true
@@ -216,7 +208,7 @@ jobs:
           with open('app/src/main/res/values/styles.xml', 'w', encoding='utf-8') as f:
               f.write('<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <style name="AppTheme" parent="Theme.AppCompat.NoActionBar">\n        <item name="android:windowBackground">@android:color/black</item>\n    </style>\n</resources>')
 
-          # 6. 配置 Gradle 專案設定（升級為 versionCode 2 / versionName 1.0.1）
+          # 6. 配置 Gradle 專案設定（升級為 compileSdk 36 / targetSdk 36 / versionCode 3）
           with open('settings.gradle', 'w', encoding='utf-8') as f:
               f.write("pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }\ndependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }\nrootProject.name = 'SlotAssistant'\ninclude ':app'\n")
 
@@ -229,14 +221,14 @@ jobs:
 
           android {
               namespace 'com.slot.assistant'
-              compileSdk 34
+              compileSdk 36
 
               defaultConfig {
                   applicationId "com.slot.assistant"
                   minSdk 24
-                  targetSdk 34
-                  versionCode 2
-                  versionName "1.0.1"
+                  targetSdk 36
+                  versionCode 3
+                  versionName "1.0.2"
               }
 
               signingConfigs {
@@ -275,7 +267,7 @@ jobs:
               f.write(app_build.strip())
 
           with open('gradle.properties', 'w', encoding='utf-8') as f:
-              f.write('android.useAndroidX=true\nandroid.nonTransitiveRClass=true\norg.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8\n')
+              f.write('android.useAndroidX=true\nandroid.nonTransitiveRClass=true\nandroid.suppressUnsupportedCompileSdk=36\norg.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8\n')
 
           with open('app/proguard-rules.pro', 'w', encoding='utf-8') as f:
               f.write('# Release rules\n')
