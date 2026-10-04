@@ -32,17 +32,22 @@ jobs:
         with:
           gradle-version: '8.7'
 
-      - name: Generate Production Release Keystore
+      - name: Configure Permanent Keystore
         run: |
-          keytool -genkeypair -v \
-            -keystore release.keystore \
-            -alias playstore_release_key \
-            -keyalg RSA \
-            -keysize 2048 \
-            -validity 10000 \
-            -storepass AstraSecurePass2026 \
-            -keypass AstraSecurePass2026 \
-            -dname "CN=AstraStudio, OU=Engineering, O=Astra, L=Taipei, ST=Taiwan, C=TW"
+          if [ -f "release.keystore" ]; then
+            echo "成功載入倉庫中的永久發布金鑰 release.keystore！"
+          else
+            echo "未找到根目錄金鑰，動態生成金鑰（警告：後續更新請固定使用同把金鑰）"
+            keytool -genkeypair -v \
+              -keystore release.keystore \
+              -alias playstore_release_key \
+              -keyalg RSA \
+              -keysize 2048 \
+              -validity 10000 \
+              -storepass AstraSecurePass2026 \
+              -keypass AstraSecurePass2026 \
+              -dname "CN=AstraStudio, OU=Engineering, O=Astra, L=Taipei, ST=Taiwan, C=TW"
+          fi
 
       - name: Auto-Sanitize Code, Rebuild Icon & Configure Project
         shell: python
@@ -149,7 +154,7 @@ jobs:
           with open('app/src/main/res/values/styles.xml', 'w', encoding='utf-8') as f:
               f.write('<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <style name="AppTheme" parent="Theme.AppCompat.NoActionBar">\n        <item name="android:windowBackground">@android:color/black</item>\n    </style>\n</resources>')
 
-          # 6. 配置標準 Gradle 專案設定（升級為 versionCode 2 / versionName 1.0.1）
+          # 6. 配置 Gradle 專案設定（升級為 versionCode 2 / versionName 1.0.1）
           with open('settings.gradle', 'w', encoding='utf-8') as f:
               f.write("pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }\ndependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }\nrootProject.name = 'SlotAssistant'\ninclude ':app'\n")
 
@@ -229,11 +234,4 @@ jobs:
         with:
           name: Signed-Release-APK
           path: app/build/outputs/apk/release/app-release.apk
-          if-no-files-found: warn
-
-      - name: Backup Keystore (永久金鑰備份)
-        uses: actions/upload-artifact@v4
-        with:
-          name: Release-Keystore-Backup
-          path: release.keystore
           if-no-files-found: warn
