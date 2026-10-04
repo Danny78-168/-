@@ -5,14 +5,12 @@ import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.os.Build;
 import android.os.Bundle;
-import android.os.Message;
 import android.util.Base64;
 import android.view.KeyEvent;
 import android.view.View;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
-import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -33,7 +31,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends AppCompatActivity {
-    // 🔑 拆分字串內建 OpenAI 金鑰
     private static final String OPENAI_KEY_PART1 = "sk-proj-dwQyYlJrpRoJqtP9ZCcPjQzDUtQXJi1MT1sd6OfsMdW7RF";
     private static final String OPENAI_KEY_PART2 = "OIOwKJ1JSgi2Satw9WoTaiC8WHPxT3BlbkFJhhCPi2LwrFZ3k7mbJ_LSvLLm65LHzcjTbnqkvKEyKsBgbRlmJzX8X0pGNyrvgH-vPN9sAcwiwA";
 
@@ -65,9 +62,7 @@ public class MainActivity extends AppCompatActivity {
         settings.setLoadWithOverviewMode(true);
         settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setJavaScriptCanOpenWindowsAutomatically(true);
-        
-        // 關鍵修復：啟用彈窗支援，解決 SA 等廠商因 window.open 遭靜默阻擋問題
-        settings.setSupportMultipleWindows(true);
+        settings.setSupportMultipleWindows(false); // 關閉多視窗，強制所有彈窗在當前視窗直接打開，解決 SA 等廠商進不去問題
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
             settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
@@ -76,7 +71,6 @@ public class MainActivity extends AppCompatActivity {
 
         settings.setUserAgentString("Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36");
 
-        // 原生雙向通道
         webView.addJavascriptInterface(new Object() {
             @JavascriptInterface
             public void switchGame(final String targetUrl) {
@@ -94,29 +88,12 @@ public class MainActivity extends AppCompatActivity {
             }
         }, "AndroidBridge");
 
-        // 攔截所有遊戲彈窗，強制倒回當前 WebView 載入
-        webView.setWebChromeClient(new WebChromeClient() {
-            @Override
-            public boolean onCreateWindow(WebView view, boolean isDialog, boolean isUserGesture, Message resultMsg) {
-                WebView newWebView = new WebView(MainActivity.this);
-                newWebView.setWebViewClient(new WebViewClient() {
-                    @Override
-                    public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest request) {
-                        view.loadUrl(request.getUrl().toString());
-                        return true;
-                    }
-                });
-                WebView.WebViewTransport transport = (WebView.WebViewTransport) resultMsg.obj;
-                transport.setWebView(newWebView);
-                resultMsg.sendToTarget();
-                return true;
-            }
-        });
-
+        webView.setWebChromeClient(new WebChromeClient());
         webView.setWebViewClient(new WebViewClient() {
             @Override
-            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                return false; // 保證所有超連結由本體 WebView 渲染
+            public boolean shouldOverrideUrlLoading(WebView view, String url) {
+                view.loadUrl(url);
+                return true;
             }
 
             @Override
@@ -126,7 +103,6 @@ public class MainActivity extends AppCompatActivity {
             }
         });
 
-        // 🌐 預設首頁：Google
         webView.loadUrl("https://www.google.com");
     }
 
@@ -212,21 +188,15 @@ public class MainActivity extends AppCompatActivity {
 
         JSONObject textObj = new JSONObject();
         textObj.put("type", "text");
-        String prompt = "你是具備大數據統計背景的職業百家樂路單視覺精算大師。\n" +
-                "請嚴格觀察圖片下半部【珠盤路、大路、下三路（大眼仔、小路、蟑螂路）及統計列】：\n\n" +
-                "【嚴禁行為】：嚴禁輸出觀望！絕對嚴禁輸出觀望！每一局必須強制二選一給出【莊】或【閒】！\n\n" +
-                "【任務一：提取盤面統計數據】\n" +
-                "請精確辨識出畫面底部統計列數值：\n" +
-                "- 本局總數 (total)\n" +
-                "- 莊 (banker)\n" +
-                "- 閒 (player)\n" +
-                "- 和 (tie)\n\n" +
-                "【任務二：高勝率形態強制推演】\n" +
-                "1.【大路形態識別】：判斷連龍（>=2同向）、規律單跳（莊閒交替）、拍拍黐等走勢。\n" +
-                "2.【下三路轉折與合流】：結合右下角大眼仔、小路、曱甴路問路。三路齊紅時順勢跟進；連龍逼近臨界跳點且下三路紅藍反轉時果斷反切抓跳！\n" +
-                "3.【輸出信心評估】：置信度嚴格評估於 72% ~ 91% 之間。\n" +
-                "4.【理由具體化】：點出形態（如『長龍第4口面臨跳點臨界，大眼仔紅藍反轉』、『大路單跳形態，下三路齊紅合流』）。\n\n" +
-                "嚴格僅輸出純 JSON 物件：\n" +
+        String prompt = "你是職業百家樂路單精算專家。請嚴格解析畫面下半部路單統計列與大路、下三路：\n" +
+                "【嚴格要求】：嚴禁輸出觀望！每一局必須強制二選一給出【莊】或【閒】！\n\n" +
+                "【任務一：提取統計數據】\n" +
+                "提取底部數字：本局總數 (total)、莊 (banker)、閒 (player)、和 (tie)。\n\n" +
+                "【任務二：高勝率推演】\n" +
+                "1. 大路連龍(>=2)或長單跳(>=3)順勢推演。\n" +
+                "2. 結合大眼仔、小路、曱甴路問路。三路齊紅時果斷跟進；面臨跳點且紅藍反轉時果斷反切抓跳！\n" +
+                "3. 置信度評估於 72% ~ 91% 之間。\n\n" +
+                "嚴格僅輸出標準 JSON：\n" +
                 "{\"total\":35,\"banker\":16,\"player\":16,\"tie\":3,\"pick\":\"莊\",\"conf\":82,\"reason\":\"長龍第4口面臨跳點臨界，大眼仔紅藍反轉\"}";
         textObj.put("text", prompt);
         contentArray.put(textObj);
@@ -325,25 +295,24 @@ public class MainActivity extends AppCompatActivity {
                     "<span id=\"hud_tog\" style=\"cursor:pointer;color:#94a3b8;font-size:10px;\">[收]</span>" +
                 "</div>' +" +
                 "'<div id=\"hud_content\" style=\"padding:8px;\">' +" +
-                    // 🌟 核心：自訂小視窗內嵌下拉選單（絕不觸發 Android 原生全螢幕彈窗）
+                    // 自訂小視窗內部專用下拉選單（解決全螢幕彈窗）
                     "'<div style=\"position:relative;margin-bottom:6px;\">' +" +
                         "<div id=\"custom_drop_btn\" style=\"background:#0f172a;border:1px solid #38bdf8;color:#38bdf8;padding:6px 8px;border-radius:4px;font-size:10px;font-weight:bold;cursor:pointer;display:flex;justify-content:space-between;align-items:center;\">" +
-                            "<span id=\"custom_drop_text\">⚡ 選擇遊戲 / 大廳切換</span>" +
-                            "<span id=\"custom_drop_arrow\" style=\"font-size:8px;\">▼</span>" +
+                            "<span id=\"custom_drop_text\">⚡ 切換遊戲入口 ▼</span>" +
                         "</div>" +
-                        "<div id=\"custom_drop_list\" style=\"display:none;position:absolute;top:100%;left:0;right:0;max-height:155px;overflow-y:auto;background:#0b1120;border:1px solid #38bdf8;border-top:none;border-radius:0 0 6px 6px;z-index:100000;box-shadow:0 8px 20px rgba(0,0,0,0.95);\">" +
+                        "<div id=\"custom_drop_list\" style=\"display:none;position:absolute;top:100%;left:0;right:0;max-height:150px;overflow-y:auto;background:#0b1120;border:1px solid #38bdf8;border-top:none;border-radius:0 0 6px 6px;z-index:100000;box-shadow:0 8px 20px rgba(0,0,0,0.95);\">" +
                             "<div class=\"drop_opt\" data-url=\"https://www.google.com\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🌐 Google 首頁</div>" +
                             "<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game?type=3\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🏠 遊戲大廳列表</div>" +
                             "<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=meta_all&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 MT 百家樂</div>" +
                             "<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=dg&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 DG 百家樂</div>" +
                             "<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=allbet&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 歐博 百家樂</div>" +
-                            "<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=sa&game_type=3&device=mobile\" data-card=\"SA\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 SA 真人 (SA LIVE)</div>" +
-                            "<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=sagaming&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 SA 真人 (備用通道)</div>" +
-                            "<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=bg&game_type=3&device=mobile\" data-card=\"BG\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 BG 百家樂 (BG LIVE)</div>" +
-                            "<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=t9&game_type=3&device=mobile\" data-card=\"T9\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 T9 百家樂 (T9 LIVE)</div>" +
-                            "<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=astar&game_type=3&device=mobile\" data-card=\"ASTAR\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 ASTAR 百家樂</div>" +
-                            "<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=gclub&game_type=3&device=mobile\" data-card=\"GCLUB\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 GCLUB 真人</div>" +
-                            "<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=pt&game_type=3&device=mobile\" data-card=\"PT\" style=\"padding:6px 8px;\">🎰 PT 百家樂 (PT LIVE)</div>" +
+                            "<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=sa&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 SA 真人 (SA LIVE)</div>" +
+                            "<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=sagaming&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 SA 真人 (備用)</div>" +
+                            "<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=bg&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 BG 百家樂</div>" +
+                            "<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=t9&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 T9 百家樂</div>" +
+                            "<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=astar&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 ASTAR 百家樂</div>" +
+                            "<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=gclub&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 GCLUB 真人</div>" +
+                            "<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=pt&game_type=3&device=mobile\" style=\"padding:6px 8px;\">🎰 PT 百家樂</div>" +
                         "</div>" +
                     "'</div>' +" +
                     // 預測展示區（強制二選一）
@@ -352,7 +321,7 @@ public class MainActivity extends AppCompatActivity {
                         "<div id=\"ai_pick_target\" style=\"font-size:18px;font-weight:900;color:#ef4444;margin:2px 0;\">待命中</div>" +
                         "<div id=\"ai_pick_desc\" style=\"font-size:9px;color:#38bdf8;line-height:1.2;\">請進入牌桌後點擊下方按鈕</div>" +
                     "</div>' +" +
-                    // 即時底欄數據：本局總數 / 莊 / 和 / 閒
+                    // 底盤即時數據：本局總數 / 莊 / 和 / 閒
                     "'<div id=\"hud_stats_box\" style=\"background:#0f172a;border:1px dashed #334155;border-radius:4px;padding:4px;text-align:center;font-size:10px;color:#38bdf8;margin-bottom:6px;\">" +
                         "總數: -- | 莊: -- | 和: -- | 閒: --" +
                     "</div>' +" +
@@ -369,14 +338,15 @@ public class MainActivity extends AppCompatActivity {
             "  sX = t.clientX; sY = t.clientY; iL = r.left; iT = r.top;" +
             "}, { passive: true });" +
             "header.addEventListener('touchmove', function(e) {" +
-            "  if (!isDrag) return; var t = e.touches[0];" +
+            "  if (!isDrag) return;" +
+            "  var t = e.touches[0];" +
             "  hud.style.left = Math.max(0, Math.min(iL + (t.clientX - sX), window.innerWidth - hud.offsetWidth)) + 'px';" +
             "  hud.style.top = Math.max(0, Math.min(iT + (t.clientY - sY), window.innerHeight - hud.offsetHeight)) + 'px';" +
             "  hud.style.right = 'auto';" +
             "}, { passive: false });" +
             "header.addEventListener('touchend', function() { isDrag = false; });" +
 
-            // 展開 / 收合
+            // 展開收合
             "var tog = document.getElementById('hud_tog');" +
             "var cnt = document.getElementById('hud_content');" +
             "bindTap(tog, function() {" +
@@ -384,4 +354,64 @@ public class MainActivity extends AppCompatActivity {
             "  else { cnt.style.display = 'none'; tog.innerText = '[展]'; }" +
             "});" +
 
-      
+            // 自訂下拉選單控制
+            "var dropBtn = document.getElementById('custom_drop_btn');" +
+            "var dropList = document.getElementById('custom_drop_list');" +
+            "bindTap(dropBtn, function() {" +
+            "  var isShow = dropList.style.display === 'block';" +
+            "  dropList.style.display = isShow ? 'none' : 'block';" +
+            "});" +
+
+            // 綁定各遊戲跳轉
+            "var opts = document.querySelectorAll('.drop_opt');" +
+            "for (var i = 0; i < opts.length; i++) {" +
+            "  (function(el) {" +
+            "    bindTap(el, function() {" +
+            "      var url = el.getAttribute('data-url');" +
+            "      document.getElementById('custom_drop_text').innerText = el.innerText;" +
+            "      dropList.style.display = 'none';" +
+            "      if (window.AndroidBridge && window.AndroidBridge.switchGame) {" +
+            "        window.AndroidBridge.switchGame(url);" +
+            "      } else {" +
+            "        location.href = url;" +
+            "      }" +
+            "    });" +
+            "  })(opts[i]);" +
+            "}" +
+
+            // 觸發視覺推論
+            "var btnDo = document.getElementById('btn_do_ai');" +
+            "bindTap(btnDo, function() {" +
+            "  btnDo.innerText = '🧠 Astra 深度推論中...';" +
+            "  btnDo.disabled = true;" +
+            "  if (window.AndroidBridge && window.AndroidBridge.requestVisualAnalysis) {" +
+            "    window.AndroidBridge.requestVisualAnalysis();" +
+            "  }" +
+                  "});" +
+
+            // 回調更新 UI
+            "window.__updateAI = function(pick, conf, reason, stats) {" +
+            "  var t = document.getElementById('ai_pick_target');" +
+            "  var d = document.getElementById('ai_pick_desc');" +
+            "  var s = document.getElementById('hud_stats_box');" +
+            "  if (t) {" +
+            "    t.innerText = '【' + pick + '】 ' + conf + '%';" +
+            "    t.style.color = (pick === '莊') ? '#ef4444' : '#38bdf8';" +
+            "  }" +
+            "  if (d) d.innerText = reason;" +
+            "  if (s) s.innerText = stats;" +
+            "  btnDo.innerText = '📸 截圖畫面並由 AI 辨識';" +
+            "  btnDo.disabled = false;" +
+            "};" +
+
+            "window.__updateAIError = function(msg) {" +
+            "  var d = document.getElementById('ai_pick_desc');" +
+            "  if (d) d.innerText = '錯誤: ' + msg;" +
+            "  btnDo.innerText = '📸 截圖畫面並由 AI 辨識';" +
+            "  btnDo.disabled = false;" +
+            "};" +
+        "})();";
+
+        view.evaluateJavascript(js, null);
+    }
+}
