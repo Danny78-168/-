@@ -2,13 +2,14 @@ package com.slot.assistant;
 
 import android.annotation.SuppressLint;
 import android.content.Intent;
+import android.graphics.Bitmap;
+import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.net.Uri;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
+import android.util.Base64;
 import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.MotionEvent;
@@ -28,7 +29,9 @@ import androidx.appcompat.app.AppCompatActivity;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 
@@ -42,7 +45,6 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvStatusMain;
     private TextView tvStatusSub;
     private TextView tvStatsLine;
-    private TextView tvCostTag;
     private Button btnScanAi;
     private double currentBalance = 2.88;
 
@@ -60,7 +62,6 @@ public class MainActivity extends AppCompatActivity {
             statusBarHeight = dp(32);
         }
 
-        // 根容器（FrameLayout 確保原生懸浮窗永久置頂於娛樂城網頁之上）
         FrameLayout rootLayout = new FrameLayout(this);
         rootLayout.setBackgroundColor(Color.parseColor("#0B1120"));
 
@@ -110,7 +111,6 @@ public class MainActivity extends AppCompatActivity {
 
         mainLayout.addView(topBar);
 
-        // WebView 瀏覽容器
         webView = new WebView(this);
         LinearLayout.LayoutParams webParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
@@ -144,7 +144,7 @@ public class MainActivity extends AppCompatActivity {
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
                 etUrl.setText(url);
-                fetchRealBalanceFromCloudflare(null);
+                fetchRealBalance();
             }
         });
 
@@ -153,7 +153,7 @@ public class MainActivity extends AppCompatActivity {
         btnRefresh.setOnClickListener(v -> {
             if (webView != null) {
                 webView.reload();
-                fetchRealBalanceFromCloudflare(null);
+                fetchRealBalance();
             }
         });
 
@@ -169,13 +169,13 @@ public class MainActivity extends AppCompatActivity {
 
         rootLayout.addView(mainLayout);
 
-        // 原生頂層常駐懸浮面板
+        // 原生懸浮面板
         LinearLayout hudContainer = buildNativeHudView(statusBarHeight);
         rootLayout.addView(hudContainer);
 
         setContentView(rootLayout);
         webView.loadUrl("https://you888a.com/");
-        fetchRealBalanceFromCloudflare(null);
+        fetchRealBalance();
     }
 
     @SuppressLint("ClickableViewAccessibility")
@@ -284,20 +284,20 @@ public class MainActivity extends AppCompatActivity {
         tvStatusMain = new TextView(this);
         tvStatusMain.setText("待命中");
         tvStatusMain.setTextColor(Color.parseColor("#38BDF8"));
-        tvStatusMain.setTextSize(TypedValue.COMPLEX_UNIT_SP, 18);
+        tvStatusMain.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17);
         tvStatusMain.setTypeface(null, Typeface.BOLD);
         tvStatusMain.setPadding(0, dp(2), 0, dp(2));
         adviceBox.addView(tvStatusMain);
 
         tvStatusSub = new TextView(this);
-        tvStatusSub.setText("請進入牌桌後點擊下方按鈕");
+        tvStatusSub.setText("進入牌桌後點擊下方按鈕由 Astra 推算");
         tvStatusSub.setTextColor(Color.parseColor("#94A3B8"));
         tvStatusSub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
         adviceBox.addView(tvStatusSub);
 
         panelAi.addView(adviceBox);
 
-        // 真實數據儀表板（僅保留 Token、本次費用、真實餘額）
+        // 費用與真實餘額
         LinearLayout costBox = new LinearLayout(this);
         costBox.setOrientation(LinearLayout.VERTICAL);
         costBox.setBackground(createBoxDrawable(Color.parseColor("#080D1A"), Color.parseColor("#1E293B"), 6));
@@ -306,7 +306,6 @@ public class MainActivity extends AppCompatActivity {
         costBoxP.setMargins(0, dp(8), 0, dp(8));
         costBox.setLayoutParams(costBoxP);
 
-        // Token 與 本次費用
         LinearLayout rowToken = new LinearLayout(this);
         rowToken.setOrientation(LinearLayout.HORIZONTAL);
         TextView tvToken = new TextView(this);
@@ -315,7 +314,7 @@ public class MainActivity extends AppCompatActivity {
         tvToken.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
         rowToken.addView(tvToken, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
-        tvCostTag = new TextView(this);
+        TextView tvCostTag = new TextView(this);
         tvCostTag.setText("本次: $0.0086");
         tvCostTag.setTextColor(Color.parseColor("#F59E0B"));
         tvCostTag.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
@@ -323,7 +322,6 @@ public class MainActivity extends AppCompatActivity {
         rowToken.addView(tvCostTag);
         costBox.addView(rowToken);
 
-        // 真實餘額（高亮展示）
         LinearLayout rowBal = new LinearLayout(this);
         rowBal.setOrientation(LinearLayout.HORIZONTAL);
         rowBal.setPadding(0, dp(4), 0, dp(4));
@@ -348,7 +346,6 @@ public class MainActivity extends AppCompatActivity {
         rowBal.addView(tvMin);
         costBox.addView(rowBal);
 
-        // 統計底欄
         tvStatsLine = new TextView(this);
         tvStatsLine.setText("累計調用: 3,329 次 | 模型連線正常");
         tvStatsLine.setTextColor(Color.parseColor("#64748B"));
@@ -358,7 +355,7 @@ public class MainActivity extends AppCompatActivity {
 
         panelAi.addView(costBox);
 
-        // AI 辨識按鈕
+        // 真實推論按鈕
         btnScanAi = new Button(this);
         btnScanAi.setText("📸 截圖畫面並由 AI 辨識");
         btnScanAi.setTextColor(Color.WHITE);
@@ -410,7 +407,7 @@ public class MainActivity extends AppCompatActivity {
             tabService.setTextColor(Color.parseColor("#38BDF8"));
             tabAi.setTextColor(Color.parseColor("#94A3B8"));
             panelService.setVisibility(View.VISIBLE);
-            panelAi.setVisibility(View.GONE);
+            panelService.setVisibility(View.GONE);
         });
 
         tvCollapse.setOnClickListener(v -> {
@@ -428,7 +425,7 @@ public class MainActivity extends AppCompatActivity {
             hud.requestLayout();
         });
 
-        // 點擊辨識：檢查真實餘額並扣款
+        // 點擊辨識：完全依賴 gpt-6-astra 返回真實結果
         btnScanAi.setOnClickListener(v -> {
             if (currentBalance < 0.0086) {
                 tvStatusMain.setText("餘額不足");
@@ -437,24 +434,96 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
 
-            btnScanAi.setText("Astra 推演中...");
+            btnScanAi.setText("📸 Astra 推算中...");
             btnScanAi.setEnabled(false);
 
-            new Handler(Looper.getMainLooper()).postDelayed(() -> {
-                fetchRealBalanceFromCloudflare("0.0086");
+            // 擷取牌桌畫面轉 Base64
+            Bitmap bitmap = Bitmap.createBitmap(webView.getWidth(), webView.getHeight(), Bitmap.Config.ARGB_8888);
+            Canvas canvas = new Canvas(bitmap);
+            webView.draw(canvas);
 
-                tvStatusMain.setText("🎯 莊 (84.6%)");
-                tvStatusMain.setTextColor(Color.parseColor("#22C55E"));
+            ByteArrayOutputStream baos = new ByteArrayOutputStream();
+            bitmap.compress(Bitmap.CompressFormat.JPEG, 70, baos);
+            final String base64Image = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP);
 
-                tvStatusSub.setText("大路單長莊排列 | 建議：跟莊 1 注");
-                tvStatusSub.setTextColor(Color.parseColor("#E2E8F0"));
+            // POST 送出請求至 Worker
+            new Thread(() -> {
+                try {
+                    URL url = new URL(CF_WORKER_BALANCE_URL);
+                    HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                    conn.setRequestMethod("POST");
+                    conn.setRequestProperty("Content-Type", "application/json");
+                    conn.setDoOutput(true);
+                    conn.setConnectTimeout(30000);
+                    conn.setReadTimeout(30000);
 
-                btnScanAi.setText("📸 截圖畫面並由 AI 辨識");
-                btnScanAi.setEnabled(true);
-            }, 700);
+                    JSONObject reqJson = new JSONObject();
+                    reqJson.put("image", base64Image);
+                    reqJson.put("user", "default_user");
+
+                    OutputStream os = conn.getOutputStream();
+                    os.write(reqJson.toString().getBytes("UTF-8"));
+                    os.close();
+
+                    int responseCode = conn.getResponseCode();
+                    BufferedReader br = new BufferedReader(new InputStreamReader(
+                            responseCode >= 200 && responseCode < 300 ? conn.getInputStream() : conn.getErrorStream()));
+                    StringBuilder sb = new StringBuilder();
+                    String line;
+                    while ((line = br.readLine()) != null) sb.append(line);
+                    br.close();
+
+                    JSONObject resJson = new JSONObject(sb.toString());
+
+                    runOnUiThread(() -> {
+                        btnScanAi.setText("📸 截圖畫面並由 AI 辨識");
+                        btnScanAi.setEnabled(true);
+
+                        if (responseCode >= 200 && responseCode < 300 && resJson.optString("status").equals("success")) {
+                            String analysis = resJson.optString("analysis", "");
+                            double bal = resJson.optDouble("balance", currentBalance);
+                            currentBalance = bal;
+
+                            // 100% 依據 gpt-6-astra 返回字串渲染
+                            String[] lines = analysis.split("\n");
+                            if (lines.length > 0) {
+                                String mainAdvice = lines[0].replace("【", "").replace("】", "").trim();
+                                tvStatusMain.setText(mainAdvice);
+                                if (mainAdvice.contains("莊")) {
+                                    tvStatusMain.setTextColor(Color.parseColor("#EF4444")); // 莊家紅
+                                } else {
+                                    tvStatusMain.setTextColor(Color.parseColor("#38BDF8")); // 閒家藍
+                                }
+                            }
+                            if (lines.length > 1) {
+                                tvStatusSub.setText(lines[1].trim());
+                                tvStatusSub.setTextColor(Color.parseColor("#E2E8F0"));
+                            }
+
+                            if (tvBalance != null) {
+                                tvBalance.setText(String.format("$%.4f USD", bal));
+                            }
+                        } else {
+                            String errMsg = resJson.optString("message", "模型推演異常");
+                            tvStatusMain.setText("推演失敗");
+                            tvStatusMain.setTextColor(Color.parseColor("#EF4444"));
+                            tvStatusSub.setText(errMsg);
+                        }
+                    });
+
+                } catch (Exception e) {
+                    runOnUiThread(() -> {
+                        btnScanAi.setText("📸 截圖畫面並由 AI 辨識");
+                        btnScanAi.setEnabled(true);
+                        tvStatusMain.setText("連線逾時");
+                        tvStatusMain.setTextColor(Color.parseColor("#EF4444"));
+                        tvStatusSub.setText("請確認網路或 API 狀態");
+                    });
+                }
+            }).start();
         });
 
-        // 原生手勢拖曳
+        // 拖曳事件處理
         final float[] dX = new float[1];
         final float[] dY = new float[1];
         header.setOnTouchListener((v, event) -> {
@@ -482,15 +551,10 @@ public class MainActivity extends AppCompatActivity {
         return hud;
     }
 
-    // 與 Cloudflare Worker 通訊讀取真實餘額
-    private void fetchRealBalanceFromCloudflare(String deductAmount) {
+    private void fetchRealBalance() {
         new Thread(() -> {
             try {
-                String reqUrl = CF_WORKER_BALANCE_URL;
-                if (deductAmount != null) {
-                    reqUrl += "?deduct=" + deductAmount;
-                }
-                URL url = new URL(reqUrl);
+                URL url = new URL(CF_WORKER_BALANCE_URL);
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                 conn.setRequestMethod("GET");
                 conn.setConnectTimeout(6000);
@@ -505,16 +569,12 @@ public class MainActivity extends AppCompatActivity {
 
                     JSONObject json = new JSONObject(sb.toString());
                     final double bal = json.optDouble("balance", 2.88);
-                    final int reqCount = json.optInt("total_requests", 3329);
                     currentBalance = bal;
 
                     runOnUiThread(() -> {
                         if (tvBalance != null) {
                             tvBalance.setText(String.format("$%.2f USD", bal));
                             tvBalance.setTextColor(bal >= 0.01 ? Color.parseColor("#22C55E") : Color.parseColor("#EF4444"));
-                        }
-                        if (tvStatsLine != null) {
-                            tvStatsLine.setText(String.format("累計調用: %,d 次 | 模型連線正常", reqCount));
                         }
                     });
                 }
