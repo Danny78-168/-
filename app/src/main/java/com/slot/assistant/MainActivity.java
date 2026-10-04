@@ -64,7 +64,7 @@ public class MainActivity extends AppCompatActivity {
         rootLayout.setLayoutParams(new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT));
 
-        // 動態獲取系統狀態列高度，避開頂部電量與時間圖示遮擋
+        // 動態獲取系統狀態列高度
         int statusBarHeight = 0;
         int resourceId = getResources().getIdentifier("status_bar_height", "dimen", "android");
         if (resourceId > 0) {
@@ -287,6 +287,18 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    // 🌟 安全 JSON 剝離清洗器（防止 Markdown 標籤破壞原生解析）
+    private String cleanJson(String text) {
+        if (text == null) return "{}";
+        text = text.trim();
+        int start = text.indexOf('{');
+        int end = text.lastIndexOf('}');
+        if (start != -1 && end > start) {
+            return text.substring(start, end + 1).trim();
+        }
+        return text;
+    }
+
     private String callOpenAIAstra(String base64Image) throws Exception {
         URL url = new URL("https://api.openai.com/v1/chat/completions");
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -308,23 +320,25 @@ public class MainActivity extends AppCompatActivity {
 
         JSONObject textObj = new JSONObject();
         textObj.put("type", "text");
-        String prompt = "你是具備頂尖視覺辨識能力的職業百家樂路單精算大師。\n" +
-                "本圖片為遊戲畫面下半部路單與統計專屬清晰區域。\n\n" +
-                "【嚴格國際盤標籤對照 - 絕不可顛倒】：\n" +
-                "- 標記 P 或 藍色圓形 = 【閒 (player)】\n" +
-                "- 標記 B 或 紅色圓形 = 【莊 (banker)】\n" +
-                "- 標記 T 或 綠色圓形 = 【和 (tie)】\n" +
-                "- 標記 # 或 總數 = 【本局總數 (total)】\n" +
-                "例如見到『#40 P 16 B 14 T 10』，必須精確解析為：總數:40, 閒:16, 莊:14, 和:10。\n\n" +
-                "【任務一：盤面統計提取】\n" +
-                "精確讀取數字：total(總數)、banker(莊)、player(閒)、tie(和)。\n\n" +
-                "【任務二：客觀大路與下三路推演】\n" +
-                "1.【禁止憑空臆測】：嚴格觀察大路最右側最新一列顏色與走向，不可胡言亂語！\n" +
-                "2.【形態識別】：長龍(連續同色>=2)、單跳(藍紅交替>=3)、拍拍黐等走勢，結合下三路問路合流。\n" +
-                "3.【輸出規範】：嚴禁輸出觀望！必須二選一強制輸出【莊】或【閒】。conf 介於 72%~91%。\n" +
-                "4.【理由具體化】：必須精準點出形態（如：『大路單跳走勢延續，下三路問閒齊腳』、『長龍走勢延續，下三路合流齊紅』）。\n\n" +
-                "嚴格僅輸出標準 JSON：\n" +
-                "{\"total\":40,\"banker\":14,\"player\":16,\"tie\":10,\"pick\":\"閒\",\"conf\":82,\"reason\":\"大路單跳走勢延續，下三路問閒齊腳\"}";
+
+        // 🌟 核心防幻覺 Prompt：強制鎖定「最右側最新一列」，嚴禁把歷史舊龍當成當前走勢
+        String prompt = "你是頂尖百家樂路單視覺精算大師。請精準觀察圖片下半部路單統計列與大路最右側最新落點：\n\n" +
+                "【任務一：盤面統計精確提取】\n" +
+                "- 總數 (total)\n" +
+                "- 莊 (banker) / 紅色\n" +
+                "- 閒 (player) / 藍色\n" +
+                "- 和 (tie) / 綠色\n\n" +
+                "【任務二：客觀大路與最新落點分析（嚴禁幻覺）】\n" +
+                "1.【鎖定大路最右側】：必須只觀察大路【最右邊最新出現的一列】！最新一列是在最右側！\n" +
+                "2.【嚴禁把歷史舊龍當成當前走勢】：\n" +
+                "   - 嚴禁把圖表左邊或中間出現過的歷史長龍說成是當前走勢！\n" +
+                "   - 只有當大路【最右側最新那一列】垂直連續出現 >= 3 顆相同顏色時，才能判定為長龍！\n" +
+                "   - 若最新最右側那一列只有 1 顆藍（閒），這是【單跳】或【斷龍轉向】，絕對不准說『長龍走勢順延』！\n" +
+                "3.【強制二選一】：嚴禁輸出觀望！必須強制二選一輸出【莊】或【閒】。conf 介於 72%~91%。\n" +
+                "4.【客觀理由】：點出最新幾何型態（例如：『大路開出閒破龍轉向，下三路問閒逢跳』、『大路呈現規律單跳，下三路齊整紅筆合流』）。\n\n" +
+                "嚴格僅輸出標準純 JSON 物件：\n" +
+                "{\"total\":30,\"banker\":16,\"player\":12,\"tie\":2,\"pick\":\"閒\",\"conf\":80,\"reason\":\"大路最新落點出閒破龍轉向，下三路合流齊腳\"}";
+
         textObj.put("text", prompt);
         contentArray.put(textObj);
 
@@ -358,7 +372,8 @@ public class MainActivity extends AppCompatActivity {
         if (code >= 400) throw new Exception("HTTP " + code + " " + sb.toString());
 
         JSONObject resObj = new JSONObject(sb.toString());
-        return resObj.getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content");
+        String rawContent = resObj.getJSONArray("choices").getJSONObject(0).getJSONObject("message").getString("content");
+        return cleanJson(rawContent);
     }
 
     private void updateHUDWithResult(final String jsonStr) {
@@ -369,7 +384,7 @@ public class MainActivity extends AppCompatActivity {
                     JSONObject obj = new JSONObject(jsonStr);
                     String pick = obj.optString("pick", "莊");
                     int conf = obj.optInt("conf", 78);
-                    String reason = obj.optString("reason", "形態推論完成");
+                    String reason = obj.optString("reason", "走勢分析完成");
 
                     int total = obj.optInt("total", 0);
                     int banker = obj.optInt("banker", 0);
@@ -382,7 +397,7 @@ public class MainActivity extends AppCompatActivity {
                             pick, conf, reason, stats);
                     webView.evaluateJavascript(js, null);
                 } catch (Exception e) {
-                    updateHUDWithError("數據解析異常");
+                    updateHUDWithError("數據解析異常: " + e.getMessage());
                 }
             }
         });
@@ -420,7 +435,7 @@ public class MainActivity extends AppCompatActivity {
         sb.append("    hud.style.cssText = 'position:fixed;top:75px;right:8px;width:215px;background:rgba(11,17,32,0.96);border:1px solid #38bdf8;border-radius:10px;z-index:99999999;color:#f1f5f9;font-size:11px;box-shadow:0 8px 24px rgba(0,0,0,0.85);font-family:sans-serif;user-select:none;backdrop-filter:blur(6px);';");
 
         sb.append("    var h = '';");
-        // 視窗標題列
+        // 標題列
         sb.append("    h += '<div id=\"hud_header\" style=\"padding:7px 10px;background:#1e293b;border-radius:10px 10px 0 0;font-weight:bold;color:#38bdf8;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #334155;cursor:move;touch-action:none;\">';");
         sb.append("    h += '<span>👁 Astra 深度推論</span>';");
         sb.append("    h += '<span id=\"hud_tog\" style=\"cursor:pointer;color:#94a3b8;font-size:10px;\">[收]</span>';");
@@ -428,13 +443,13 @@ public class MainActivity extends AppCompatActivity {
 
         sb.append("    h += '<div id=\"hud_content\" style=\"padding:8px;\">';");
 
-        // 🌟 雙分頁導航列
+        // 雙分頁切換列
         sb.append("    h += '<div style=\"display:flex;border-bottom:1px solid #334155;margin-bottom:8px;\">';");
         sb.append("    h += '<div id=\"tab_btn_1\" style=\"flex:1;text-align:center;padding:5px 0;cursor:pointer;font-weight:bold;color:#38bdf8;border-bottom:2px solid #38bdf8;\">🎯 AI 精算</div>';");
         sb.append("    h += '<div id=\"tab_btn_2\" style=\"flex:1;text-align:center;padding:5px 0;cursor:pointer;font-weight:bold;color:#94a3b8;border-bottom:2px solid transparent;\">💬 反饋客服</div>';");
         sb.append("    h += '</div>';");
 
-        // 🌟 分頁一：AI 精算面板
+        // 分頁一：AI 精算
         sb.append("    h += '<div id=\"tab_page_1\">';");
         sb.append("    h += '<div style=\"background:rgba(15,23,42,0.85);border:1px solid #1e3a8a;border-radius:6px;padding:6px 4px;text-align:center;margin-bottom:6px;\">';");
         sb.append("    h += '<div style=\"font-size:10px;color:#94a3b8;\">🎯 深度路單精算建議</div>';");
@@ -447,9 +462,8 @@ public class MainActivity extends AppCompatActivity {
         sb.append("    h += '<button id=\"btn_do_ai\" style=\"width:100%;background:#2563eb;color:#fff;border:none;padding:7px 0;border-radius:4px;font-weight:bold;font-size:11px;\">📸 截圖畫面並由 AI 辨識</button>';");
         sb.append("    h += '</div>';");
 
-        // 🌟 分頁二：技術反饋與官方帳號
+        // 分頁二：客服與反饋
         sb.append("    h += '<div id=\"tab_page_2\" style=\"display:none;\">';");
-        // TG 卡片
         sb.append("    h += '<div style=\"background:#0f172a;border:1px solid #1e293b;border-radius:6px;padding:8px;margin-bottom:8px;\">';");
         sb.append("    h += '<div style=\"display:flex;align-items:center;margin-bottom:4px;\">';");
         sb.append("    h += '<span style=\"font-size:13px;margin-right:4px;\">✈️</span><span style=\"font-weight:bold;color:#38bdf8;\">Telegram 技術反饋</span>';");
@@ -457,7 +471,6 @@ public class MainActivity extends AppCompatActivity {
         sb.append("    h += '<div style=\"font-size:10px;color:#cbd5e1;margin-bottom:6px;\">飛機帳號: <b style=\"color:#facc15;\">@TG_APK1</b></div>';");
         sb.append("    h += '<button id=\"btn_open_tg\" style=\"width:100%;background:#0284c7;color:#fff;border:none;padding:6px 0;border-radius:4px;font-weight:bold;font-size:10px;\">開啟 Telegram 反饋</button>';");
         sb.append("    h += '</div>';");
-        // LINE 卡片
         sb.append("    h += '<div style=\"background:#0f172a;border:1px solid #1e293b;border-radius:6px;padding:8px;\">';");
         sb.append("    h += '<div style=\"display:flex;align-items:center;margin-bottom:4px;\">';");
         sb.append("    h += '<span style=\"font-size:13px;margin-right:4px;\">🟢</span><span style=\"font-weight:bold;color:#22c55e;\">LINE 官方帳號</span>';");
@@ -467,9 +480,9 @@ public class MainActivity extends AppCompatActivity {
         sb.append("    h += '</div>';");
         sb.append("    h += '</div>';");
 
-        sb.append("    h += '</div>';"); // 結束 hud_content
+        sb.append("    h += '</div>';");
 
-        sb.append("    hud.innerHTML = h;");
+        hud.innerHTML = h;
         sb.append("    document.body.appendChild(hud);");
 
         // 拖曳處理
@@ -497,64 +510,52 @@ public class MainActivity extends AppCompatActivity {
         sb.append("      tog.innerText = hide ? '[收]' : '[展]';");
         sb.append("    });");
 
-        // 分頁切換控制
+        // 分頁切換
         sb.append("    var t1Btn = document.getElementById('tab_btn_1');");
         sb.append("    var t2Btn = document.getElementById('tab_btn_2');");
         sb.append("    var p1 = document.getElementById('tab_page_1');");
         sb.append("    var p2 = document.getElementById('tab_page_2');");
-
         sb.append("    bindTap(t1Btn, function() {");
-        sb.append("      p1.style.display = 'block';");
-        sb.append("      p2.style.display = 'none';");
-        sb.append("      t1Btn.style.color = '#38bdf8';");
-        sb.append("      t1Btn.style.borderBottom = '2px solid #38bdf8';");
-        sb.append("      t2Btn.style.color = '#94a3b8';");
-        sb.append("      t2Btn.style.borderBottom = '2px solid transparent';");
+        sb.append("      p1.style.display = 'block'; p2.style.display = 'none';");
+        sb.append("      t1Btn.style.color = '#38bdf8'; t1Btn.style.borderBottom = '2px solid #38bdf8';");
+        sb.append("      t2Btn.style.color = '#94a3b8'; t2Btn.style.borderBottom = '2px solid transparent';");
         sb.append("    });");
-
         sb.append("    bindTap(t2Btn, function() {");
-        sb.append("      p1.style.display = 'none';");
-        sb.append("      p2.style.display = 'block';");
-        sb.append("      t2Btn.style.color = '#38bdf8';");
-        sb.append("      t2Btn.style.borderBottom = '2px solid #38bdf8';");
-        sb.append("      t1Btn.style.color = '#94a3b8';");
-        sb.append("      t1Btn.style.borderBottom = '2px solid transparent';");
+        sb.append("      p1.style.display = 'none'; p2.style.display = 'block';");
+        sb.append("      t2Btn.style.color = '#38bdf8'; t2Btn.style.borderBottom = '2px solid #38bdf8';");
+        sb.append("      t1Btn.style.color = '#94a3b8'; t1Btn.style.borderBottom = '2px solid transparent';");
         sb.append("    });");
 
-        // 外部客服連結跳轉
+        // 外部客服點擊
         sb.append("    bindTap(document.getElementById('btn_open_tg'), function() {");
         sb.append("      if (window.AndroidBridge && window.AndroidBridge.openExternalUrl) {");
         sb.append("        window.AndroidBridge.openExternalUrl('https://t.me/TG_apk1');");
-        sb.append("      } else {");
-        sb.append("        location.href = 'https://t.me/TG_apk1';");
-        sb.append("      }");
+        sb.append("      } else { location.href = 'https://t.me/TG_apk1'; }");
         sb.append("    });");
-
         sb.append("    bindTap(document.getElementById('btn_open_line'), function() {");
         sb.append("      if (window.AndroidBridge && window.AndroidBridge.openExternalUrl) {");
         sb.append("        window.AndroidBridge.openExternalUrl('https://lin.ee/xquprrD');");
-        sb.append("      } else {");
-        sb.append("        location.href = 'https://lin.ee/xquprrD';");
-        sb.append("      }");
+        sb.append("      } else { location.href = 'https://lin.ee/xquprrD'; }");
         sb.append("    });");
 
-        // 觸發推論按鈕
+        // 🌟 點擊即刻重置 UI，避免殘留上一局結果
         sb.append("    var btnDo = document.getElementById('btn_do_ai');");
         sb.append("    bindTap(btnDo, function() {");
         sb.append("      btnDo.innerText = '🧠 Astra 深度推論中...';");
         sb.append("      btnDo.disabled = true;");
+        sb.append("      var t = document.getElementById('ai_pick_target');");
+        sb.append("      var d = document.getElementById('ai_pick_desc');");
+        sb.append("      if (t) { t.innerText = '分析中...'; t.style.color = '#facc15'; }");
+        sb.append("      if (d) { d.innerText = '正在定位最右側最新一列...'; }");
         sb.append("      if (window.AndroidBridge && window.AndroidBridge.requestVisualAnalysis) {");
         sb.append("        window.AndroidBridge.requestVisualAnalysis();");
         sb.append("      }");
         sb.append("    });");
         sb.append("  }");
 
-        // 生命週期載入
         sb.append("  if (document.readyState === 'loading') {");
         sb.append("    document.addEventListener('DOMContentLoaded', initHUD);");
-        sb.append("  } else {");
-        sb.append("    initHUD();");
-        sb.append("  }");
+        sb.append("  } else { initHUD(); }");
 
         // 回調更新介面
         sb.append("  window.__updateAI = function(pick, conf, reason, stats) {");
@@ -572,8 +573,10 @@ public class MainActivity extends AppCompatActivity {
         sb.append("  };");
 
         sb.append("  window.__updateAIError = function(msg) {");
+        sb.append("    var t = document.getElementById('ai_pick_target');");
         sb.append("    var d = document.getElementById('ai_pick_desc');");
         sb.append("    var b = document.getElementById('btn_do_ai');");
+        sb.append("    if (t) { t.innerText = '【辨識異常】'; t.style.color = '#ef4444'; }");
         sb.append("    if (d) d.innerText = '錯誤: ' + msg;");
         sb.append("    if (b) { b.innerText = '📸 截圖畫面並由 AI 辨識'; b.disabled = false; }");
         sb.append("  };");
