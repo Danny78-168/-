@@ -45,11 +45,13 @@ public class MainActivity extends AppCompatActivity {
     private EditText etUrl;
     private TextView tvBalance;
     private TextView tvStatusMain;
+    private TextView tvBoardCounts;
+    private TextView tvSpecialChances;
     private TextView tvStatusSub;
     private TextView tvStatsLine;
     private Button btnScanAi;
     private LinearLayout hudLayout;
-    private double currentBalance = 1.75;
+    private double currentBalance = 1.15;
 
     @SuppressLint({"SetJavaScriptEnabled", "ClickableViewAccessibility"})
     @Override
@@ -187,13 +189,13 @@ public class MainActivity extends AppCompatActivity {
         hud.setOrientation(LinearLayout.VERTICAL);
         hud.setBackground(createBoxDrawable(Color.parseColor("#0B1120"), Color.parseColor("#38BDF8"), 10));
 
-        FrameLayout.LayoutParams hudParams = new FrameLayout.LayoutParams(dp(250), FrameLayout.LayoutParams.WRAP_CONTENT);
+        FrameLayout.LayoutParams hudParams = new FrameLayout.LayoutParams(dp(260), FrameLayout.LayoutParams.WRAP_CONTENT);
         hudParams.gravity = Gravity.TOP | Gravity.END;
         hudParams.topMargin = statusBarHeight + dp(55);
-        hudParams.rightMargin = dp(14);
+        hudParams.rightMargin = dp(12);
         hud.setLayoutParams(hudParams);
 
-        // 標題列
+        // 頂部標題列
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setBackground(createBoxDrawable(Color.parseColor("#1E293B"), 0, 10));
@@ -220,7 +222,7 @@ public class MainActivity extends AppCompatActivity {
         final LinearLayout body = new LinearLayout(this);
         body.setOrientation(LinearLayout.VERTICAL);
 
-        // 分頁切換
+        // 分頁列
         LinearLayout tabBar = new LinearLayout(this);
         tabBar.setOrientation(LinearLayout.HORIZONTAL);
         tabBar.setBackgroundColor(Color.parseColor("#0F172A"));
@@ -276,26 +278,41 @@ public class MainActivity extends AppCompatActivity {
         adviceBox.setOrientation(LinearLayout.VERTICAL);
         adviceBox.setBackground(createBoxDrawable(Color.parseColor("#0F172A"), Color.parseColor("#3B82F6"), 6));
         adviceBox.setPadding(dp(8), dp(6), dp(8), dp(6));
-        adviceBox.setGravity(Gravity.CENTER);
 
-        TextView tvAdviceTitle = new TextView(this);
-        tvAdviceTitle.setText("🎯 深度路單精算建議");
-        tvAdviceTitle.setTextColor(Color.parseColor("#94A3B8"));
-        tvAdviceTitle.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
-        adviceBox.addView(tvAdviceTitle);
-
+        // 1. 未來預測標題與大字
         tvStatusMain = new TextView(this);
         tvStatusMain.setText("待命中");
         tvStatusMain.setTextColor(Color.parseColor("#38BDF8"));
         tvStatusMain.setTextSize(TypedValue.COMPLEX_UNIT_SP, 17);
         tvStatusMain.setTypeface(null, Typeface.BOLD);
-        tvStatusMain.setPadding(0, dp(2), 0, dp(2));
+        tvStatusMain.setGravity(Gravity.CENTER);
         adviceBox.addView(tvStatusMain);
 
+        // 2. 盤面統計顆數
+        tvBoardCounts = new TextView(this);
+        tvBoardCounts.setText("盤面統計: 莊 -- | 閒 -- | 和 -- | 超6 --");
+        tvBoardCounts.setTextColor(Color.parseColor("#E2E8F0"));
+        tvBoardCounts.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.5f);
+        tvBoardCounts.setGravity(Gravity.CENTER);
+        tvBoardCounts.setPadding(0, dp(3), 0, dp(2));
+        adviceBox.addView(tvBoardCounts);
+
+        // 3. 特殊牌型機會（對子、超6、超和）
+        tvSpecialChances = new TextView(this);
+        tvSpecialChances.setText("對子機會: -- | 超6: -- | 超和: --");
+        tvSpecialChances.setTextColor(Color.parseColor("#FBBF24"));
+        tvSpecialChances.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.5f);
+        tvSpecialChances.setTypeface(null, Typeface.BOLD);
+        tvSpecialChances.setGravity(Gravity.CENTER);
+        tvSpecialChances.setPadding(0, 0, 0, dp(3));
+        adviceBox.addView(tvSpecialChances);
+
+        // 4. 路單形態精算說明
         tvStatusSub = new TextView(this);
         tvStatusSub.setText("進入牌桌後點擊下方按鈕由 Astra 推算");
         tvStatusSub.setTextColor(Color.parseColor("#94A3B8"));
-        tvStatusSub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
+        tvStatusSub.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.5f);
+        tvStatusSub.setGravity(Gravity.CENTER);
         adviceBox.addView(tvStatusSub);
 
         panelAi.addView(adviceBox);
@@ -336,7 +353,7 @@ public class MainActivity extends AppCompatActivity {
         rowBal.addView(tvBalLabel);
 
         tvBalance = new TextView(this);
-        tvBalance.setText("$1.75 USD");
+        tvBalance.setText("$1.15 USD");
         tvBalance.setTextColor(Color.parseColor("#22C55E"));
         tvBalance.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
         tvBalance.setTypeface(null, Typeface.BOLD);
@@ -350,7 +367,7 @@ public class MainActivity extends AppCompatActivity {
         costBox.addView(rowBal);
 
         tvStatsLine = new TextView(this);
-        tvStatsLine.setText("累計調用: 3,457 次 | 視覺推演模式已就緒");
+        tvStatsLine.setText("累計調用: 3,466 次 | 視覺推演模式已就緒");
         tvStatsLine.setTextColor(Color.parseColor("#64748B"));
         tvStatsLine.setTextSize(TypedValue.COMPLEX_UNIT_SP, 9.5f);
         tvStatsLine.setGravity(Gravity.CENTER);
@@ -423,12 +440,12 @@ public class MainActivity extends AppCompatActivity {
                 body.setVisibility(View.VISIBLE);
                 tvTitle.setText("👁 Astra 深度推論");
                 tvCollapse.setText("[收]");
-                hud.getLayoutParams().width = dp(250);
+                hud.getLayoutParams().width = dp(260);
             }
             hud.requestLayout();
         });
 
-        // 點擊辨識：透過 PixelCopy 從 GPU 畫面緩衝區抓取 100% 真實 WebGL 路單
+        // 點擊辨識：透過 PixelCopy 截圖
         btnScanAi.setOnClickListener(v -> {
             if (currentBalance < 0.0086) {
                 tvStatusMain.setText("餘額不足");
@@ -440,26 +457,22 @@ public class MainActivity extends AppCompatActivity {
             btnScanAi.setText("📸 擷取畫面中...");
             btnScanAi.setEnabled(false);
 
-            // 1. 瞬間隱藏懸浮窗，確保不擋住路單
             hud.setVisibility(View.INVISIBLE);
 
-            // 2. 延遲 50ms 確保畫面繪製完成後，使用 PixelCopy 截取 GPU 真實畫面
             new Handler(Looper.getMainLooper()).postDelayed(() -> {
                 View decorView = getWindow().getDecorView();
                 final Bitmap bitmap = Bitmap.createBitmap(decorView.getWidth(), decorView.getHeight(), Bitmap.Config.ARGB_8888);
 
                 PixelCopy.request(getWindow(), bitmap, copyResult -> {
-                    // 截圖完畢，立即復原懸浮窗顯示
                     hud.setVisibility(View.VISIBLE);
 
                     if (copyResult == PixelCopy.SUCCESS) {
                         btnScanAi.setText("Astra 推演中...");
 
-                        ByteArrayOutputStream baos = new ByteArrayOutputStream();
+                        ByteArrayOutputStream();
                         bitmap.compress(Bitmap.CompressFormat.JPEG, 75, baos);
                         final String base64Image = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP);
 
-                        // 送交 Cloudflare Worker
                         sendScreenshotToWorker(base64Image);
                     } else {
                         btnScanAi.setText("📸 截圖畫面並由 AI 辨識");
@@ -537,19 +550,25 @@ public class MainActivity extends AppCompatActivity {
                         double bal = resJson.optDouble("balance", currentBalance);
                         currentBalance = bal;
 
+                        // 解析 4 行數據並分區渲染
                         String[] lines = analysis.split("\n");
                         if (lines.length > 0) {
-                            String mainAdvice = lines[0].replace("【", "").replace("】", "").trim();
-                            tvStatusMain.setText(mainAdvice);
-                            if (mainAdvice.contains("莊")) {
+                            String p1 = lines[0].replace("【", "").replace("】", "").trim();
+                            tvStatusMain.setText(p1);
+                            if (p1.contains("莊")) {
                                 tvStatusMain.setTextColor(Color.parseColor("#EF4444"));
                             } else {
                                 tvStatusMain.setTextColor(Color.parseColor("#38BDF8"));
                             }
                         }
                         if (lines.length > 1) {
-                            tvStatusSub.setText(lines[1].trim());
-                            tvStatusSub.setTextColor(Color.parseColor("#E2E8F0"));
+                            tvBoardCounts.setText(lines[1].trim());
+                        }
+                        if (lines.length > 2) {
+                            tvSpecialChances.setText(lines[2].trim());
+                        }
+                        if (lines.length > 3) {
+                            tvStatusSub.setText(lines[3].trim());
                         }
 
                         if (tvBalance != null) {
@@ -592,7 +611,7 @@ public class MainActivity extends AppCompatActivity {
                     br.close();
 
                     JSONObject json = new JSONObject(sb.toString());
-                    final double bal = json.optDouble("balance", 1.75);
+                    final double bal = json.optDouble("balance", 1.15);
                     currentBalance = bal;
 
                     runOnUiThread(() -> {
