@@ -1,9 +1,11 @@
 package com.slot.assistant;
 
 import android.annotation.SuppressLint;
+import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.util.Base64;
@@ -14,6 +16,7 @@ import android.view.inputmethod.EditorInfo;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
+import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
@@ -61,14 +64,14 @@ public class MainActivity extends AppCompatActivity {
         rootLayout.setLayoutParams(new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT));
 
-        // 🌟 動態獲取系統狀態列（Status Bar）高度，避開時間與電量列
+        // 動態獲取系統狀態列高度，避開頂部電量與時間圖示遮擋
         int statusBarHeight = 0;
         int resourceId = getResources().getIdentifier("status_bar_height", "dimen", "android");
         if (resourceId > 0) {
             statusBarHeight = getResources().getDimensionPixelSize(resourceId);
         }
 
-        // 🌐 頂部網址列（頂部內縮，完全避開系統圖示遮擋）
+        // 頂部網址列
         LinearLayout topBar = new LinearLayout(this);
         topBar.setOrientation(LinearLayout.HORIZONTAL);
         topBar.setBackgroundColor(Color.parseColor("#0f172a"));
@@ -124,7 +127,7 @@ public class MainActivity extends AppCompatActivity {
         topBar.addView(btnGo);
         rootLayout.addView(topBar);
 
-        // 核心 WebView
+        // WebView 本體
         webView = new WebView(this);
         LinearLayout.LayoutParams webParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1.0f);
@@ -154,6 +157,7 @@ public class MainActivity extends AppCompatActivity {
 
         settings.setUserAgentString("Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36");
 
+        // 原生雙向通道
         webView.addJavascriptInterface(new Object() {
             @JavascriptInterface
             public void switchGame(final String targetUrl) {
@@ -169,12 +173,37 @@ public class MainActivity extends AppCompatActivity {
             public void requestVisualAnalysis() {
                 captureAndAnalyze();
             }
+
+            @JavascriptInterface
+            public void openExternalUrl(final String targetUrl) {
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        try {
+                            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl));
+                            startActivity(intent);
+                        } catch (Exception e) {
+                            webView.loadUrl(targetUrl);
+                        }
+                    }
+                });
+            }
         }, "AndroidBridge");
 
         webView.setWebChromeClient(new WebChromeClient());
         webView.setWebViewClient(new WebViewClient() {
             @Override
-            public boolean shouldOverrideUrlLoading(WebView view, String url) {
+            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+                String url = request.getUrl().toString();
+                if (url.startsWith("tg:") || url.startsWith("line:") || url.startsWith("intent:")) {
+                    try {
+                        Intent intent = Intent.parseUri(url, Intent.URI_INTENT_SCHEME);
+                        startActivity(intent);
+                        return true;
+                    } catch (Exception ignored) {
+                        return true;
+                    }
+                }
                 view.loadUrl(url);
                 return true;
             }
@@ -199,7 +228,7 @@ public class MainActivity extends AppCompatActivity {
         return super.onKeyDown(keyCode, event);
     }
 
-    // 🌟 核心提升：聚焦畫面下半部路單專區，高解析度裁切，消除模糊幻覺
+    // 聚焦下半部路單專區高清提取
     private void captureAndAnalyze() {
         if (isAnalyzing) return;
         isAnalyzing = true;
@@ -216,18 +245,15 @@ public class MainActivity extends AppCompatActivity {
                         return;
                     }
 
-                    // 1. 完整渲染畫布
                     Bitmap fullBmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888);
                     Canvas canvas = new Canvas(fullBmp);
                     webView.draw(canvas);
 
-                    // 2. 僅裁切畫面下半部 55%（路單、統計列、下三路核心區），排除上半部視訊雜訊
                     int cropY = (int) (h * 0.45);
                     int cropH = h - cropY;
                     Bitmap cropBmp = Bitmap.createBitmap(fullBmp, 0, cropY, w, cropH);
                     fullBmp.recycle();
 
-                    // 3. 寬度縮放至 720px，路單格子細節清晰度提升 3 倍
                     float scale = 720f / w;
                     int targetW = 720;
                     int targetH = (int) (cropH * scale);
@@ -261,7 +287,6 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    // 視覺推論：強制符號對齊，防止將 P/B 顛倒
     private String callOpenAIAstra(String base64Image) throws Exception {
         URL url = new URL("https://api.openai.com/v1/chat/completions");
         HttpURLConnection conn = (HttpURLConnection) url.openConnection();
@@ -294,10 +319,10 @@ public class MainActivity extends AppCompatActivity {
                 "【任務一：盤面統計提取】\n" +
                 "精確讀取數字：total(總數)、banker(莊)、player(閒)、tie(和)。\n\n" +
                 "【任務二：客觀大路與下三路推演】\n" +
-                "1.【禁止憑空臆測】：嚴格觀察大路最右側最新一列的顏色與圈數！若最新為藍色單跳，絕不可胡扯為紅連！\n" +
+                "1.【禁止憑空臆測】：嚴格觀察大路最右側最新一列顏色與走向，不可胡言亂語！\n" +
                 "2.【形態識別】：長龍(連續同色>=2)、單跳(藍紅交替>=3)、拍拍黐等走勢，結合下三路問路合流。\n" +
                 "3.【輸出規範】：嚴禁輸出觀望！必須二選一強制輸出【莊】或【閒】。conf 介於 72%~91%。\n" +
-                "4.【理由具體化】：必須精準點出幾何形態（例如：『大路單跳形態順延，下三路問閒齊腳』、『長龍走勢延續，下三路合流齊紅』）。\n\n" +
+                "4.【理由具體化】：必須精準點出形態（如：『大路單跳走勢延續，下三路問閒齊腳』、『長龍走勢延續，下三路合流齊紅』）。\n\n" +
                 "嚴格僅輸出標準 JSON：\n" +
                 "{\"total\":40,\"banker\":14,\"player\":16,\"tie\":10,\"pick\":\"閒\",\"conf\":82,\"reason\":\"大路單跳走勢延續，下三路問閒齊腳\"}";
         textObj.put("text", prompt);
@@ -395,6 +420,7 @@ public class MainActivity extends AppCompatActivity {
         sb.append("    hud.style.cssText = 'position:fixed;top:75px;right:8px;width:215px;background:rgba(11,17,32,0.96);border:1px solid #38bdf8;border-radius:10px;z-index:99999999;color:#f1f5f9;font-size:11px;box-shadow:0 8px 24px rgba(0,0,0,0.85);font-family:sans-serif;user-select:none;backdrop-filter:blur(6px);';");
 
         sb.append("    var h = '';");
+        // 視窗標題列
         sb.append("    h += '<div id=\"hud_header\" style=\"padding:7px 10px;background:#1e293b;border-radius:10px 10px 0 0;font-weight:bold;color:#38bdf8;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #334155;cursor:move;touch-action:none;\">';");
         sb.append("    h += '<span>👁 Astra 深度推論</span>';");
         sb.append("    h += '<span id=\"hud_tog\" style=\"cursor:pointer;color:#94a3b8;font-size:10px;\">[收]</span>';");
@@ -402,43 +428,46 @@ public class MainActivity extends AppCompatActivity {
 
         sb.append("    h += '<div id=\"hud_content\" style=\"padding:8px;\">';");
 
-        // 小視窗內部自訂選單
-        sb.append("    h += '<div style=\"position:relative;margin-bottom:6px;\">';");
-        sb.append("    h += '<div id=\"custom_drop_btn\" style=\"background:#0f172a;border:1px solid #38bdf8;color:#38bdf8;padding:6px 8px;border-radius:4px;font-size:10px;font-weight:bold;cursor:pointer;display:flex;justify-content:space-between;align-items:center;\">';");
-        sb.append("    h += '<span id=\"custom_drop_text\">⚡ 切換遊戲入口 ▼</span>';");
+        // 🌟 雙分頁導航列
+        sb.append("    h += '<div style=\"display:flex;border-bottom:1px solid #334155;margin-bottom:8px;\">';");
+        sb.append("    h += '<div id=\"tab_btn_1\" style=\"flex:1;text-align:center;padding:5px 0;cursor:pointer;font-weight:bold;color:#38bdf8;border-bottom:2px solid #38bdf8;\">🎯 AI 精算</div>';");
+        sb.append("    h += '<div id=\"tab_btn_2\" style=\"flex:1;text-align:center;padding:5px 0;cursor:pointer;font-weight:bold;color:#94a3b8;border-bottom:2px solid transparent;\">💬 反饋客服</div>';");
         sb.append("    h += '</div>';");
 
-        sb.append("    h += '<div id=\"custom_drop_list\" style=\"display:none;position:absolute;top:100%;left:0;right:0;max-height:150px;overflow-y:auto;background:#0b1120;border:1px solid #38bdf8;border-top:none;border-radius:0 0 6px 6px;z-index:100000;box-shadow:0 8px 20px rgba(0,0,0,0.95);\">';");
-        sb.append("    h += '<div class=\"drop_opt\" data-url=\"https://www.google.com\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🌐 Google 首頁</div>';");
-        sb.append("    h += '<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game?type=3\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🏠 遊戲大廳列表</div>';");
-        sb.append("    h += '<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=meta_all&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 MT 百家樂</div>';");
-        sb.append("    h += '<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=dg&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 DG 百家樂</div>';");
-        sb.append("    h += '<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=allbet&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 歐博 百家樂</div>';");
-        sb.append("    h += '<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=sa&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 SA 真人 (SA LIVE)</div>';");
-        sb.append("    h += '<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=sagaming&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 SA 真人 (備用通道)</div>';");
-        sb.append("    h += '<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=bg&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 BG 百家樂</div>';");
-        sb.append("    h += '<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=t9&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 T9 百家樂</div>';");
-        sb.append("    h += '<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=astar&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 ASTAR 百家樂</div>';");
-        sb.append("    h += '<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=gclub&game_type=3&device=mobile\" style=\"padding:6px 8px;border-bottom:1px solid #1e293b;\">🎰 GCLUB 真人</div>';");
-        sb.append("    h += '<div class=\"drop_opt\" data-url=\"https://www.osc169.com/#/game/play?game_name=pt&game_type=3&device=mobile\" style=\"padding:6px 8px;\">🎰 PT 百家樂</div>';");
-        sb.append("    h += '</div>';");
-        sb.append("    h += '</div>';");
-
-        // 預測核心展示
+        // 🌟 分頁一：AI 精算面板
+        sb.append("    h += '<div id=\"tab_page_1\">';");
         sb.append("    h += '<div style=\"background:rgba(15,23,42,0.85);border:1px solid #1e3a8a;border-radius:6px;padding:6px 4px;text-align:center;margin-bottom:6px;\">';");
         sb.append("    h += '<div style=\"font-size:10px;color:#94a3b8;\">🎯 深度路單精算建議</div>';");
         sb.append("    h += '<div id=\"ai_pick_target\" style=\"font-size:18px;font-weight:900;color:#ef4444;margin:2px 0;\">待命中</div>';");
         sb.append("    h += '<div id=\"ai_pick_desc\" style=\"font-size:9px;color:#38bdf8;line-height:1.2;\">請進入牌桌後點擊下方按鈕</div>';");
         sb.append("    h += '</div>';");
-
-        // 即時底欄數據：總數 / 莊 / 和 / 閒
         sb.append("    h += '<div id=\"hud_stats_box\" style=\"background:#0f172a;border:1px dashed #334155;border-radius:4px;padding:4px;text-align:center;font-size:10px;color:#38bdf8;margin-bottom:6px;\">';");
         sb.append("    h += '總數: -- | 莊: -- | 和: -- | 閒: --';");
         sb.append("    h += '</div>';");
-
-        // 操作按鈕
-        sb.append("    h += '<button id=\"btn_do_ai\" style=\"width:100%;background:#2563eb;color:#fff;border:none;padding:7px 0;border-radius:4px;font-weight:bold;margin-bottom:4px;font-size:11px;\">📸 截圖畫面並由 AI 辨識</button>';");
+        sb.append("    h += '<button id=\"btn_do_ai\" style=\"width:100%;background:#2563eb;color:#fff;border:none;padding:7px 0;border-radius:4px;font-weight:bold;font-size:11px;\">📸 截圖畫面並由 AI 辨識</button>';");
         sb.append("    h += '</div>';");
+
+        // 🌟 分頁二：技術反饋與官方帳號
+        sb.append("    h += '<div id=\"tab_page_2\" style=\"display:none;\">';");
+        // TG 卡片
+        sb.append("    h += '<div style=\"background:#0f172a;border:1px solid #1e293b;border-radius:6px;padding:8px;margin-bottom:8px;\">';");
+        sb.append("    h += '<div style=\"display:flex;align-items:center;margin-bottom:4px;\">';");
+        sb.append("    h += '<span style=\"font-size:13px;margin-right:4px;\">✈️</span><span style=\"font-weight:bold;color:#38bdf8;\">Telegram 技術反饋</span>';");
+        sb.append("    h += '</div>';");
+        sb.append("    h += '<div style=\"font-size:10px;color:#cbd5e1;margin-bottom:6px;\">飛機帳號: <b style=\"color:#facc15;\">@TG_APK1</b></div>';");
+        sb.append("    h += '<button id=\"btn_open_tg\" style=\"width:100%;background:#0284c7;color:#fff;border:none;padding:6px 0;border-radius:4px;font-weight:bold;font-size:10px;\">開啟 Telegram 反饋</button>';");
+        sb.append("    h += '</div>';");
+        // LINE 卡片
+        sb.append("    h += '<div style=\"background:#0f172a;border:1px solid #1e293b;border-radius:6px;padding:8px;\">';");
+        sb.append("    h += '<div style=\"display:flex;align-items:center;margin-bottom:4px;\">';");
+        sb.append("    h += '<span style=\"font-size:13px;margin-right:4px;\">🟢</span><span style=\"font-weight:bold;color:#22c55e;\">LINE 官方帳號</span>';");
+        sb.append("    h += '</div>';");
+        sb.append("    h += '<div style=\"font-size:10px;color:#cbd5e1;margin-bottom:6px;\">搜尋官方帳號: <b style=\"color:#facc15;\">@osc168</b></div>';");
+        sb.append("    h += '<button id=\"btn_open_line\" style=\"width:100%;background:#16a34a;color:#fff;border:none;padding:6px 0;border-radius:4px;font-weight:bold;font-size:10px;\">開啟 LINE 官方帳號</button>';");
+        sb.append("    h += '</div>';");
+        sb.append("    h += '</div>';");
+
+        sb.append("    h += '</div>';"); // 結束 hud_content
 
         sb.append("    hud.innerHTML = h;");
         sb.append("    document.body.appendChild(hud);");
@@ -459,7 +488,7 @@ public class MainActivity extends AppCompatActivity {
         sb.append("    }, { passive: false });");
         sb.append("    header.addEventListener('touchend', function() { isDrag = false; });");
 
-        // 展開收合
+        // 展開 / 收合
         sb.append("    var tog = document.getElementById('hud_tog');");
         sb.append("    var cnt = document.getElementById('hud_content');");
         sb.append("    bindTap(tog, function() {");
@@ -468,32 +497,48 @@ public class MainActivity extends AppCompatActivity {
         sb.append("      tog.innerText = hide ? '[收]' : '[展]';");
         sb.append("    });");
 
-        // 下拉選單展開
-        sb.append("    var dropBtn = document.getElementById('custom_drop_btn');");
-        sb.append("    var dropList = document.getElementById('custom_drop_list');");
-        sb.append("    bindTap(dropBtn, function() {");
-        sb.append("      var isShow = (dropList.style.display === 'block');");
-        sb.append("      dropList.style.display = isShow ? 'none' : 'block';");
+        // 分頁切換控制
+        sb.append("    var t1Btn = document.getElementById('tab_btn_1');");
+        sb.append("    var t2Btn = document.getElementById('tab_btn_2');");
+        sb.append("    var p1 = document.getElementById('tab_page_1');");
+        sb.append("    var p2 = document.getElementById('tab_page_2');");
+
+        sb.append("    bindTap(t1Btn, function() {");
+        sb.append("      p1.style.display = 'block';");
+        sb.append("      p2.style.display = 'none';");
+        sb.append("      t1Btn.style.color = '#38bdf8';");
+        sb.append("      t1Btn.style.borderBottom = '2px solid #38bdf8';");
+        sb.append("      t2Btn.style.color = '#94a3b8';");
+        sb.append("      t2Btn.style.borderBottom = '2px solid transparent';");
         sb.append("    });");
 
-        // 選項點擊跳轉
-        sb.append("    var opts = document.querySelectorAll('.drop_opt');");
-        sb.append("    for (var i = 0; i < opts.length; i++) {");
-        sb.append("      (function(el) {");
-        sb.append("        bindTap(el, function() {");
-        sb.append("          var url = el.getAttribute('data-url');");
-        sb.append("          document.getElementById('custom_drop_text').innerText = el.innerText;");
-        sb.append("          dropList.style.display = 'none';");
-        sb.append("          if (window.AndroidBridge && window.AndroidBridge.switchGame) {");
-        sb.append("            window.AndroidBridge.switchGame(url);");
-        sb.append("          } else {");
-        sb.append("            location.href = url;");
-        sb.append("          }");
-        sb.append("        });");
-        sb.append("      })(opts[i]);");
-        sb.append("    }");
+        sb.append("    bindTap(t2Btn, function() {");
+        sb.append("      p1.style.display = 'none';");
+        sb.append("      p2.style.display = 'block';");
+        sb.append("      t2Btn.style.color = '#38bdf8';");
+        sb.append("      t2Btn.style.borderBottom = '2px solid #38bdf8';");
+        sb.append("      t1Btn.style.color = '#94a3b8';");
+        sb.append("      t1Btn.style.borderBottom = '2px solid transparent';");
+        sb.append("    });");
 
-        // 觸發推論
+        // 外部客服連結跳轉
+        sb.append("    bindTap(document.getElementById('btn_open_tg'), function() {");
+        sb.append("      if (window.AndroidBridge && window.AndroidBridge.openExternalUrl) {");
+        sb.append("        window.AndroidBridge.openExternalUrl('https://t.me/TG_apk1');");
+        sb.append("      } else {");
+        sb.append("        location.href = 'https://t.me/TG_apk1';");
+        sb.append("      }");
+        sb.append("    });");
+
+        sb.append("    bindTap(document.getElementById('btn_open_line'), function() {");
+        sb.append("      if (window.AndroidBridge && window.AndroidBridge.openExternalUrl) {");
+        sb.append("        window.AndroidBridge.openExternalUrl('https://lin.ee/xquprrD');");
+        sb.append("      } else {");
+        sb.append("        location.href = 'https://lin.ee/xquprrD';");
+        sb.append("      }");
+        sb.append("    });");
+
+        // 觸發推論按鈕
         sb.append("    var btnDo = document.getElementById('btn_do_ai');");
         sb.append("    bindTap(btnDo, function() {");
         sb.append("      btnDo.innerText = '🧠 Astra 深度推論中...';");
@@ -504,13 +549,14 @@ public class MainActivity extends AppCompatActivity {
         sb.append("    });");
         sb.append("  }");
 
+        // 生命週期載入
         sb.append("  if (document.readyState === 'loading') {");
         sb.append("    document.addEventListener('DOMContentLoaded', initHUD);");
         sb.append("  } else {");
         sb.append("    initHUD();");
         sb.append("  }");
 
-        // 回調更新 UI
+        // 回調更新介面
         sb.append("  window.__updateAI = function(pick, conf, reason, stats) {");
         sb.append("    var t = document.getElementById('ai_pick_target');");
         sb.append("    var d = document.getElementById('ai_pick_desc');");
