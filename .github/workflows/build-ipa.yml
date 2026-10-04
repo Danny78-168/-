@@ -15,7 +15,7 @@ jobs:
 
       - name: Compile and Package IPA
         run: |
-          # 1. 自動深度清洗 ViewController.swift（消除全形空格、span 標籤與特殊字元）
+          # 1. 自動深度清洗 ViewController.swift（消除 cite 引用、span 標籤與全形字元）
           python3 -c "
           import os, re, unicodedata
 
@@ -34,12 +34,16 @@ jobs:
 
               text = raw.decode('utf-8', errors='ignore')
 
-              # Unicode NFKC 正規化（將全形空格與特殊字元轉為 ASCII）
-              text = unicodedata.normalize('NFKC', text)
+              # 徹底過濾所有 AI 引用標籤
+              text = re.sub(r'\]+\]', '', text)
 
-              # 自動濾除複製貼上夾帶的 [span_...] 與 標籤
-              text = re.sub(r'\[span[_\w]*\]\([^\)]*\)', '', text)
-              text = re.sub(r'\]*\]', '', text)
+              # 過濾所有複製殘留的 [span...] 與 (start_span)/(end_span)
+              text = re.sub(r'\[span[_\w]*\](?:\([^\)]*\))?', '', text)
+              text = re.sub(r'\[\/?span[_\w]*\]', '', text)
+              text = re.sub(r'\((?:start|end)_span\)', '', text)
+
+              # Unicode NFKC 正規化（將全形空格與符號轉為標準 ASCII）
+              text = unicodedata.normalize('NFKC', text)
 
               # 清理所有殘留的不可見字元與特殊空格
               text = re.sub(r'[\u00a0\u1680\u180e\u2000-\u200b\u202f\u205f\u3000\ufeff]', ' ', text)
@@ -48,7 +52,7 @@ jobs:
               # 統一換行符號
               text = text.replace('\r\n', '\n').replace('\r', '\n')
 
-              # 確保類別宣告與首行屬性為純淨 ASCII 語法
+              # 確保類別宣告為純淨 ASCII 語法
               lines = text.split('\n')
               for i, l in enumerate(lines):
                   if 'class ViewController' in l:
@@ -60,7 +64,7 @@ jobs:
 
               with open(path, 'w', encoding='utf-8') as f:
                   f.write(text)
-              print('ViewController.swift 標籤與字元已自動清理完畢！')
+              print('ViewController.swift 中的 cite 標籤與異常符號已全數清除乾淨！')
           "
 
           mkdir -p build/Payload/AstraAssistant.app
