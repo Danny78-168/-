@@ -16,13 +16,13 @@ import android.view.inputmethod.EditorInfo;
 import android.webkit.CookieManager;
 import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
-import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.LinearLayout;
+import android.widget.TextView;
 import androidx.appcompat.app.AppCompatActivity;
 
 import org.json.JSONArray;
@@ -40,7 +40,6 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class MainActivity extends AppCompatActivity {
-    // 🔑 拆分字串內建 OpenAI 金鑰
     private static final String OPENAI_KEY_PART1 = "sk-proj-dwQyYlJrpRoJqtP9ZCcPjQzDUtQXJi1MT1sd6OfsMdW7RF";
     private static final String OPENAI_KEY_PART2 = "OIOwKJ1JSgi2Satw9WoTaiC8WHPxT3BlbkFJhhCPi2LwrFZ3k7mbJ_LSvLLm65LHzcjTbnqkvKEyKsBgbRlmJzX8X0pGNyrvgH-vPN9sAcwiwA";
 
@@ -58,20 +57,17 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
 
-        // 主容器
         LinearLayout rootLayout = new LinearLayout(this);
         rootLayout.setOrientation(LinearLayout.VERTICAL);
         rootLayout.setLayoutParams(new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.MATCH_PARENT));
 
-        // 動態獲取系統狀態列高度
         int statusBarHeight = 0;
         int resourceId = getResources().getIdentifier("status_bar_height", "dimen", "android");
         if (resourceId > 0) {
             statusBarHeight = getResources().getDimensionPixelSize(resourceId);
         }
 
-        // 頂部網址列
         LinearLayout topBar = new LinearLayout(this);
         topBar.setOrientation(LinearLayout.HORIZONTAL);
         topBar.setBackgroundColor(Color.parseColor("#0f172a"));
@@ -111,9 +107,9 @@ public class MainActivity extends AppCompatActivity {
         };
 
         btnGo.setOnClickListener(goListener);
-        etUrlInput.setOnEditorActionListener(new android.widget.TextView.OnEditorActionListener() {
+        etUrlInput.setOnEditorActionListener(new TextView.OnEditorActionListener() {
             @Override
-            public boolean onEditorAction(android.widget.TextView v, int actionId, KeyEvent event) {
+            public boolean onEditorAction(TextView v, int actionId, KeyEvent event) {
                 if (actionId == EditorInfo.IME_ACTION_GO || actionId == EditorInfo.IME_ACTION_DONE ||
                     (event != null && event.getKeyCode() == KeyEvent.KEYCODE_ENTER)) {
                     btnGo.performClick();
@@ -127,7 +123,6 @@ public class MainActivity extends AppCompatActivity {
         topBar.addView(btnGo);
         rootLayout.addView(topBar);
 
-        // WebView 本體
         webView = new WebView(this);
         LinearLayout.LayoutParams webParams = new LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, 0, 1.0f);
@@ -157,7 +152,6 @@ public class MainActivity extends AppCompatActivity {
 
         settings.setUserAgentString("Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36");
 
-        // 原生雙向通道
         webView.addJavascriptInterface(new Object() {
             @JavascriptInterface
             public void switchGame(final String targetUrl) {
@@ -181,7 +175,7 @@ public class MainActivity extends AppCompatActivity {
                     public void run() {
                         try {
                             Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(targetUrl));
-                            startActivity(intent);
+                            MainActivity.this.startActivity(intent);
                         } catch (Exception e) {
                             webView.loadUrl(targetUrl);
                         }
@@ -192,22 +186,6 @@ public class MainActivity extends AppCompatActivity {
 
         webView.setWebChromeClient(new WebChromeClient());
         webView.setWebViewClient(new WebViewClient() {
-            @Override
-            public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                String url = request.getUrl().toString();
-                if (url.startsWith("tg:") || url.startsWith("line:") || url.startsWith("intent:")) {
-                    try {
-                        Intent intent = Intent.parseUri(url, Intent.URI_INTENT_SCHEME);
-                        startActivity(intent);
-                        return true;
-                    } catch (Exception ignored) {
-                        return true;
-                    }
-                }
-                view.loadUrl(url);
-                return true;
-            }
-
             @Override
             public void onPageFinished(WebView view, String url) {
                 super.onPageFinished(view, url);
@@ -228,7 +206,6 @@ public class MainActivity extends AppCompatActivity {
         return super.onKeyDown(keyCode, event);
     }
 
-    // 聚焦下半部路單專區高清提取
     private void captureAndAnalyze() {
         if (isAnalyzing) return;
         isAnalyzing = true;
@@ -287,7 +264,6 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
-    // 🌟 安全 JSON 剝離清洗器（防止 Markdown 標籤破壞原生解析）
     private String cleanJson(String text) {
         if (text == null) return "{}";
         text = text.trim();
@@ -320,25 +296,12 @@ public class MainActivity extends AppCompatActivity {
 
         JSONObject textObj = new JSONObject();
         textObj.put("type", "text");
-
-        // 🌟 核心防幻覺 Prompt：強制鎖定「最右側最新一列」，嚴禁把歷史舊龍當成當前走勢
-        String prompt = "你是頂尖百家樂路單視覺精算大師。請精準觀察圖片下半部路單統計列與大路最右側最新落點：\n\n" +
-                "【任務一：盤面統計精確提取】\n" +
-                "- 總數 (total)\n" +
-                "- 莊 (banker) / 紅色\n" +
-                "- 閒 (player) / 藍色\n" +
-                "- 和 (tie) / 綠色\n\n" +
-                "【任務二：客觀大路與最新落點分析（嚴禁幻覺）】\n" +
-                "1.【鎖定大路最右側】：必須只觀察大路【最右邊最新出現的一列】！最新一列是在最右側！\n" +
-                "2.【嚴禁把歷史舊龍當成當前走勢】：\n" +
-                "   - 嚴禁把圖表左邊或中間出現過的歷史長龍說成是當前走勢！\n" +
-                "   - 只有當大路【最右側最新那一列】垂直連續出現 >= 3 顆相同顏色時，才能判定為長龍！\n" +
-                "   - 若最新最右側那一列只有 1 顆藍（閒），這是【單跳】或【斷龍轉向】，絕對不准說『長龍走勢順延』！\n" +
-                "3.【強制二選一】：嚴禁輸出觀望！必須強制二選一輸出【莊】或【閒】。conf 介於 72%~91%。\n" +
-                "4.【客觀理由】：點出最新幾何型態（例如：『大路開出閒破龍轉向，下三路問閒逢跳』、『大路呈現規律單跳，下三路齊整紅筆合流』）。\n\n" +
-                "嚴格僅輸出標準純 JSON 物件：\n" +
+        String prompt = "你是頂尖百家樂路單精算大師。請精確觀察圖片下半部路單統計列與大路最右側最新落點：\n" +
+                "1. 提取統計：total(總數)、banker(莊/紅)、player(閒/藍)、tie(和/綠)。\n" +
+                "2. 嚴格鎖定大路最右側最新一列！嚴禁把圖表左側歷史長龍當成當前走勢！若最右側僅1顆藍，屬單跳或轉向，絕不可稱長龍順延！\n" +
+                "3. 嚴禁輸出觀望！必須二選一強制輸出莊或閒，conf介於72%~91%。\n" +
+                "輸出標準JSON格式：\n" +
                 "{\"total\":30,\"banker\":16,\"player\":12,\"tie\":2,\"pick\":\"閒\",\"conf\":80,\"reason\":\"大路最新落點出閒破龍轉向，下三路合流齊腳\"}";
-
         textObj.put("text", prompt);
         contentArray.put(textObj);
 
@@ -435,7 +398,6 @@ public class MainActivity extends AppCompatActivity {
         sb.append("    hud.style.cssText = 'position:fixed;top:75px;right:8px;width:215px;background:rgba(11,17,32,0.96);border:1px solid #38bdf8;border-radius:10px;z-index:99999999;color:#f1f5f9;font-size:11px;box-shadow:0 8px 24px rgba(0,0,0,0.85);font-family:sans-serif;user-select:none;backdrop-filter:blur(6px);';");
 
         sb.append("    var h = '';");
-        // 標題列
         sb.append("    h += '<div id=\"hud_header\" style=\"padding:7px 10px;background:#1e293b;border-radius:10px 10px 0 0;font-weight:bold;color:#38bdf8;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #334155;cursor:move;touch-action:none;\">';");
         sb.append("    h += '<span>👁 Astra 深度推論</span>';");
         sb.append("    h += '<span id=\"hud_tog\" style=\"cursor:pointer;color:#94a3b8;font-size:10px;\">[收]</span>';");
@@ -443,13 +405,11 @@ public class MainActivity extends AppCompatActivity {
 
         sb.append("    h += '<div id=\"hud_content\" style=\"padding:8px;\">';");
 
-        // 雙分頁切換列
         sb.append("    h += '<div style=\"display:flex;border-bottom:1px solid #334155;margin-bottom:8px;\">';");
         sb.append("    h += '<div id=\"tab_btn_1\" style=\"flex:1;text-align:center;padding:5px 0;cursor:pointer;font-weight:bold;color:#38bdf8;border-bottom:2px solid #38bdf8;\">🎯 AI 精算</div>';");
         sb.append("    h += '<div id=\"tab_btn_2\" style=\"flex:1;text-align:center;padding:5px 0;cursor:pointer;font-weight:bold;color:#94a3b8;border-bottom:2px solid transparent;\">💬 反饋客服</div>';");
         sb.append("    h += '</div>';");
 
-        // 分頁一：AI 精算
         sb.append("    h += '<div id=\"tab_page_1\">';");
         sb.append("    h += '<div style=\"background:rgba(15,23,42,0.85);border:1px solid #1e3a8a;border-radius:6px;padding:6px 4px;text-align:center;margin-bottom:6px;\">';");
         sb.append("    h += '<div style=\"font-size:10px;color:#94a3b8;\">🎯 深度路單精算建議</div>';");
@@ -462,7 +422,6 @@ public class MainActivity extends AppCompatActivity {
         sb.append("    h += '<button id=\"btn_do_ai\" style=\"width:100%;background:#2563eb;color:#fff;border:none;padding:7px 0;border-radius:4px;font-weight:bold;font-size:11px;\">📸 截圖畫面並由 AI 辨識</button>';");
         sb.append("    h += '</div>';");
 
-        // 分頁二：客服與反饋
         sb.append("    h += '<div id=\"tab_page_2\" style=\"display:none;\">';");
         sb.append("    h += '<div style=\"background:#0f172a;border:1px solid #1e293b;border-radius:6px;padding:8px;margin-bottom:8px;\">';");
         sb.append("    h += '<div style=\"display:flex;align-items:center;margin-bottom:4px;\">';");
@@ -485,7 +444,6 @@ public class MainActivity extends AppCompatActivity {
         hud.innerHTML = h;
         sb.append("    document.body.appendChild(hud);");
 
-        // 拖曳處理
         sb.append("    var header = document.getElementById('hud_header');");
         sb.append("    var isDrag = false, sX, sY, iL, iT;");
         sb.append("    header.addEventListener('touchstart', function(e) {");
@@ -501,7 +459,6 @@ public class MainActivity extends AppCompatActivity {
         sb.append("    }, { passive: false });");
         sb.append("    header.addEventListener('touchend', function() { isDrag = false; });");
 
-        // 展開 / 收合
         sb.append("    var tog = document.getElementById('hud_tog');");
         sb.append("    var cnt = document.getElementById('hud_content');");
         sb.append("    bindTap(tog, function() {");
@@ -510,7 +467,6 @@ public class MainActivity extends AppCompatActivity {
         sb.append("      tog.innerText = hide ? '[收]' : '[展]';");
         sb.append("    });");
 
-        // 分頁切換
         sb.append("    var t1Btn = document.getElementById('tab_btn_1');");
         sb.append("    var t2Btn = document.getElementById('tab_btn_2');");
         sb.append("    var p1 = document.getElementById('tab_page_1');");
@@ -526,7 +482,6 @@ public class MainActivity extends AppCompatActivity {
         sb.append("      t1Btn.style.color = '#94a3b8'; t1Btn.style.borderBottom = '2px solid transparent';");
         sb.append("    });");
 
-        // 外部客服點擊
         sb.append("    bindTap(document.getElementById('btn_open_tg'), function() {");
         sb.append("      if (window.AndroidBridge && window.AndroidBridge.openExternalUrl) {");
         sb.append("        window.AndroidBridge.openExternalUrl('https://t.me/TG_apk1');");
@@ -538,7 +493,6 @@ public class MainActivity extends AppCompatActivity {
         sb.append("      } else { location.href = 'https://lin.ee/xquprrD'; }");
         sb.append("    });");
 
-        // 🌟 點擊即刻重置 UI，避免殘留上一局結果
         sb.append("    var btnDo = document.getElementById('btn_do_ai');");
         sb.append("    bindTap(btnDo, function() {");
         sb.append("      btnDo.innerText = '🧠 Astra 深度推論中...';");
@@ -557,7 +511,6 @@ public class MainActivity extends AppCompatActivity {
         sb.append("    document.addEventListener('DOMContentLoaded', initHUD);");
         sb.append("  } else { initHUD(); }");
 
-        // 回調更新介面
         sb.append("  window.__updateAI = function(pick, conf, reason, stats) {");
         sb.append("    var t = document.getElementById('ai_pick_target');");
         sb.append("    var d = document.getElementById('ai_pick_desc');");
