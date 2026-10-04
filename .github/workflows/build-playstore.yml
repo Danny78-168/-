@@ -49,9 +49,7 @@ jobs:
         run: |
           python3 -c "
           import os, json, subprocess, glob, shutil
-
           TARGET_SHA1 = '678D71669FF1905A66D50E6A99773A469ED36E48'
-
           def check_keystore(path):
               try:
                   out = subprocess.check_output(
@@ -74,33 +72,29 @@ jobs:
                   out = subprocess.check_output(['gh', 'api', 'repos/:owner/:repo/actions/artifacts?per_page=100'], text=True)
                   artifacts = json.loads(out).get('artifacts', [])
                   backup_arts = [a for a in artifacts if a.get('name') == 'Release-Keystore-Backup']
-                  
                   for art in backup_arts:
                       art_id = art['id']
                       tmp_dir = f'/tmp/art_{art_id}'
                       os.makedirs(tmp_dir, exist_ok=True)
                       zip_file = f'/tmp/art_{art_id}.zip'
-                      
                       subprocess.run(f'gh api repos/:owner/:repo/actions/artifacts/{art_id}/zip > {zip_file}', shell=True, check=True)
                       subprocess.run(['unzip', '-q', '-o', zip_file, '-d', tmp_dir], check=True)
-                      
                       candidates = glob.glob(f'{tmp_dir}/**/*.keystore', recursive=True)
                       for cand in candidates:
                           if check_keystore(cand):
-                              print(f'成功自 Artifact #{art_id} 尋回目標金鑰！')
                               shutil.copyfile(cand, 'release.keystore')
                               found = True
                               break
                       if found:
                           break
               except Exception as e:
-                  print(f'檢索發生錯誤: {e}')
+                  print(f'檢索錯誤: {e}')
           "
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add release.keystore || true
-          git commit -m "chore: lock official Google Play release keystore" || true
+          git commit -m "chore: lock official keystore" || true
           git push origin main || true
 
       - name: Auto-Sanitize Code, Rebuild Icon & Configure Project
@@ -109,41 +103,54 @@ jobs:
           import os, glob, shutil, re
           from PIL import Image, ImageDraw
 
-          # 1. 建立標準專案結構
           os.makedirs('app/src/main/java/com/slot/assistant', exist_ok=True)
           os.makedirs('app/src/main/res/values', exist_ok=True)
           os.makedirs('app/src/main/res/drawable', exist_ok=True)
           for res in ['mipmap-mdpi', 'mipmap-hdpi', 'mipmap-xhdpi', 'mipmap-xxhdpi', 'mipmap-xxxhdpi']:
               os.makedirs(f'app/src/main/res/{res}', exist_ok=True)
 
-          # 2. 自動清洗修復 MainActivity.java
-          main_files = glob.glob('**/MainActivity.java', recursive=True)
-          if main_files:
-              main_files.sort(key=lambda x: os.path.getsize(x), reverse=True)
-              target_path = 'app/src/main/java/com/slot/assistant/MainActivity.java'
-              with open(main_files[0], 'r', encoding='utf-8', errors='ignore') as f:
-                  code = f.read()
+          # 建立懸浮窗與網絡專用權限 Manifest
+          manifest = '''<?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+              <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+              <application
+                  android:allowBackup="true"
+                  android:label="@string/app_name"
+                  android:icon="@mipmap/ic_launcher"
+                  android:roundIcon="@mipmap/ic_launcher"
+                  android:supportsRtl="true"
+                  android:theme="@style/AppTheme"
+                  android:usesCleartextTraffic="true">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:windowSoftInputMode="adjustResize"
+                      android:configChanges="orientation|screenSize">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+                  <service
+                      android:name=".MainActivity$FloatingService"
+                      android:enabled="true"
+                      android:exported="false" />
+              </application>
+          </manifest>'''
+          with open('app/src/main/AndroidManifest.xml', 'w', encoding='utf-8') as f:
+              f.write(manifest.strip())
 
-              pkg_idx = code.rfind('package com.slot.assistant;')
-              if pkg_idx != -1:
-                  code = code[pkg_idx:]
+          # 生成 values 資源
+          with open('app/src/main/res/values/strings.xml', 'w', encoding='utf-8') as f:
+              f.write('<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <string name="app_name">Astra Assistant</string>\n</resources>')
 
-              brace_idx = code.rfind('}')
-              if brace_idx != -1:
-                  code = code[:brace_idx + 1]
+          with open('app/src/main/res/values/styles.xml', 'w', encoding='utf-8') as f:
+              f.write('<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <style name="AppTheme" parent="Theme.AppCompat.NoActionBar">\n        <item name="android:windowBackground">@android:color/black</item>\n    </style>\n</resources>')
 
-              code = re.sub(r'\[(https?://[^\]]+)\]\([^\)]+\)', r'\1', code)
-              code = code.replace('"""', '";')
-              code = code.replace('\u00a0', ' ')
-
-              with open(target_path, 'w', encoding='utf-8') as f:
-                  f.write(code.strip())
-
-              for mf in main_files:
-                  if os.path.abspath(mf) != os.path.abspath(target_path) and os.path.exists(mf):
-                      os.remove(mf)
-
-          # 3. 保留並無損重構使用者的 ic_launcher.png 圖示
+          # 圖示構建
           icon_candidates = glob.glob('**/ic_launcher.png', recursive=True)
           user_icon_path = icon_candidates[0] if icon_candidates else None
           base_img = None
@@ -151,7 +158,6 @@ jobs:
               try:
                   with Image.open(user_icon_path) as img:
                       base_img = img.convert('RGBA')
-                      print(f'成功載入自訂圖標: {user_icon_path}')
               except Exception:
                   pass
 
@@ -173,42 +179,6 @@ jobs:
               resized = base_img.resize(size, Image.Resampling.LANCZOS)
               resized.save(path, format='PNG')
 
-          # 4. 生成標準 AndroidManifest.xml
-          manifest = '''<?xml version="1.0" encoding="utf-8"?>
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <uses-permission android:name="android.permission.INTERNET" />
-              <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-              <application
-                  android:allowBackup="true"
-                  android:label="@string/app_name"
-                  android:icon="@mipmap/ic_launcher"
-                  android:roundIcon="@mipmap/ic_launcher"
-                  android:supportsRtl="true"
-                  android:theme="@style/AppTheme"
-                  android:usesCleartextTraffic="true">
-                  <activity
-                      android:name=".MainActivity"
-                      android:exported="true"
-                      android:windowSoftInputMode="adjustResize"
-                      android:configChanges="orientation|screenSize">
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN" />
-                          <category android:name="android.intent.category.LAUNCHER" />
-                      </intent-filter>
-                  </activity>
-              </application>
-          </manifest>'''
-          with open('app/src/main/AndroidManifest.xml', 'w', encoding='utf-8') as f:
-              f.write(manifest.strip())
-
-          # 5. 生成 values 資源
-          with open('app/src/main/res/values/strings.xml', 'w', encoding='utf-8') as f:
-              f.write('<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <string name="app_name">Astra Assistant</string>\n</resources>')
-
-          with open('app/src/main/res/values/styles.xml', 'w', encoding='utf-8') as f:
-              f.write('<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <style name="AppTheme" parent="Theme.AppCompat.NoActionBar">\n        <item name="android:windowBackground">@android:color/black</item>\n    </style>\n</resources>')
-
-          # 6. 配置 Gradle 專案設定（升級為 compileSdk 36 / targetSdk 36 / versionCode 3）
           with open('settings.gradle', 'w', encoding='utf-8') as f:
               f.write("pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }\ndependencyResolutionManagement { repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS); repositories { google(); mavenCentral() } }\nrootProject.name = 'SlotAssistant'\ninclude ':app'\n")
 
@@ -227,8 +197,8 @@ jobs:
                   applicationId "com.slot.assistant"
                   minSdk 24
                   targetSdk 36
-                  versionCode 3
-                  versionName "1.0.2"
+                  versionCode 5
+                  versionName "1.0.4"
               }
 
               signingConfigs {
