@@ -51,7 +51,7 @@ public class MainActivity extends AppCompatActivity {
     private TextView tvStatsLine;
     private Button btnScanAi;
     private LinearLayout hudLayout;
-    private double currentBalance = 1.15;
+    private double currentBalance = 0.33;
 
     @SuppressLint({"SetJavaScriptEnabled", "ClickableViewAccessibility"})
     @Override
@@ -279,7 +279,6 @@ public class MainActivity extends AppCompatActivity {
         adviceBox.setBackground(createBoxDrawable(Color.parseColor("#0F172A"), Color.parseColor("#3B82F6"), 6));
         adviceBox.setPadding(dp(8), dp(6), dp(8), dp(6));
 
-        // 1. 未來預測標題與大字
         tvStatusMain = new TextView(this);
         tvStatusMain.setText("待命中");
         tvStatusMain.setTextColor(Color.parseColor("#38BDF8"));
@@ -288,7 +287,6 @@ public class MainActivity extends AppCompatActivity {
         tvStatusMain.setGravity(Gravity.CENTER);
         adviceBox.addView(tvStatusMain);
 
-        // 2. 盤面統計顆數
         tvBoardCounts = new TextView(this);
         tvBoardCounts.setText("盤面統計: 莊 -- | 閒 -- | 和 -- | 超6 --");
         tvBoardCounts.setTextColor(Color.parseColor("#E2E8F0"));
@@ -297,7 +295,6 @@ public class MainActivity extends AppCompatActivity {
         tvBoardCounts.setPadding(0, dp(3), 0, dp(2));
         adviceBox.addView(tvBoardCounts);
 
-        // 3. 特殊牌型機會（對子、超6、超和）
         tvSpecialChances = new TextView(this);
         tvSpecialChances.setText("對子機會: -- | 超6: -- | 超和: --");
         tvSpecialChances.setTextColor(Color.parseColor("#FBBF24"));
@@ -307,7 +304,6 @@ public class MainActivity extends AppCompatActivity {
         tvSpecialChances.setPadding(0, 0, 0, dp(3));
         adviceBox.addView(tvSpecialChances);
 
-        // 4. 路單形態精算說明
         tvStatusSub = new TextView(this);
         tvStatusSub.setText("進入牌桌後點擊下方按鈕由 Astra 推算");
         tvStatusSub.setTextColor(Color.parseColor("#94A3B8"));
@@ -353,7 +349,7 @@ public class MainActivity extends AppCompatActivity {
         rowBal.addView(tvBalLabel);
 
         tvBalance = new TextView(this);
-        tvBalance.setText("$1.15 USD");
+        tvBalance.setText("$0.33 USD");
         tvBalance.setTextColor(Color.parseColor("#22C55E"));
         tvBalance.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
         tvBalance.setTypeface(null, Typeface.BOLD);
@@ -445,7 +441,7 @@ public class MainActivity extends AppCompatActivity {
             hud.requestLayout();
         });
 
-        // 點擊辨識：透過 PixelCopy 截圖
+        // 點擊辨識：透過 PixelCopy 截圖並等比縮放
         btnScanAi.setOnClickListener(v -> {
             if (currentBalance < 0.0086) {
                 tvStatusMain.setText("餘額不足");
@@ -469,10 +465,32 @@ public class MainActivity extends AppCompatActivity {
                     if (copyResult == PixelCopy.SUCCESS) {
                         btnScanAi.setText("Astra 推演中...");
 
-                        // 正確修正：完整宣告 ByteArrayOutputStream 物件變數
+                        // 等比縮放至寬度 720px
+                        int targetWidth = 720;
+                        int targetHeight = (int) (bitmap.getHeight() * (720.0f / bitmap.getWidth()));
+                        Bitmap scaledBitmap = Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true);
+
                         ByteArrayOutputStream baos = new ByteArrayOutputStream();
-                        bitmap.compress(Bitmap.CompressFormat.JPEG, 75, baos);
+                        scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 70, baos);
+// 將送給 AI 的 720px 圖片直接存入手機暫存區
+try {
+    java.io.File file = new java.io.File(getExternalFilesDir(null), "ai_screenshot.jpg");
+    java.io.FileOutputStream fos = new java.io.FileOutputStream(file);
+    scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 70, fos);
+    fos.close();
+    android.widget.Toast.makeText(this, "截圖已存至: " + file.getAbsolutePath(), android.widget.Toast.LENGTH_LONG).show();
+} catch (Exception e) {
+    e.printStackTrace();
+}
+
+
+                        
                         final String base64Image = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP);
+
+                        if (scaledBitmap != bitmap) {
+                            scaledBitmap.recycle();
+                        }
+                        bitmap.recycle();
 
                         sendScreenshotToWorker(base64Image);
                     } else {
@@ -612,7 +630,7 @@ public class MainActivity extends AppCompatActivity {
                     br.close();
 
                     JSONObject json = new JSONObject(sb.toString());
-                    final double bal = json.optDouble("balance", 1.15);
+                    final double bal = json.optDouble("balance", 0.33);
                     currentBalance = bal;
 
                     runOnUiThread(() -> {
