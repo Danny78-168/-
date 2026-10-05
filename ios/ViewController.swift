@@ -1,7 +1,7 @@
 import UIKit
 import WebKit
 
-class ViewController: UIViewController, WKNavigationDelegate, UITextFieldDelegate {
+class ViewController: UIViewController, WKNavigationDelegate, WKScriptMessageHandler, UITextFieldDelegate {
 
     private let workerUrl = "https://openai.zhu90305.workers.dev/"
     
@@ -39,6 +39,11 @@ class ViewController: UIViewController, WKNavigationDelegate, UITextFieldDelegat
             webView.load(URLRequest(url: url))
         }
         fetchRealBalance()
+    }
+
+    // MARK: - WKScriptMessageHandler 協定實作 (解決 GitHub Actions 編譯報錯)
+    func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+        // 接收 WebView 腳本回調（保留空實作滿足協議）
     }
 
     // MARK: - 取得狀態列頂部安全距離
@@ -94,6 +99,7 @@ class ViewController: UIViewController, WKNavigationDelegate, UITextFieldDelegat
         let safeTop = getStatusBarHeight()
         let config = WKWebViewConfiguration()
         config.allowsInlineMediaPlayback = true
+        config.userContentController.add(self, name: "appHandler")
         
         let webFrame = CGRect(x: 0, y: safeTop + 50, width: view.bounds.width, height: view.bounds.height - (safeTop + 50))
         webView = WKWebView(frame: webFrame, configuration: config)
@@ -112,11 +118,9 @@ class ViewController: UIViewController, WKNavigationDelegate, UITextFieldDelegat
         hudView.layer.cornerRadius = 10
         hudView.clipsToBounds = true
         
-        // 拖曳手勢
         let panGesture = UIPanGestureRecognizer(target: self, action: #selector(handleHudPan(_:)))
         hudView.addGestureRecognizer(panGesture)
         
-        // 頂部標題列
         let header = UIView(frame: CGRect(x: 0, y: 0, width: hudWidth, height: 36))
         header.backgroundColor = UIColor(hex: "#1E293B")
         
@@ -134,10 +138,8 @@ class ViewController: UIViewController, WKNavigationDelegate, UITextFieldDelegat
         header.addSubview(collapseButton)
         hudView.addSubview(header)
         
-        // 內容容器
         hudBody = UIView(frame: CGRect(x: 0, y: 36, width: hudWidth, height: 344))
         
-        // 分頁按鈕
         let tabBar = UIView(frame: CGRect(x: 0, y: 0, width: hudWidth, height: 32))
         tabBar.backgroundColor = UIColor(hex: "#0F172A")
         
@@ -159,7 +161,6 @@ class ViewController: UIViewController, WKNavigationDelegate, UITextFieldDelegat
         // --- AI 面板 ---
         panelAi = UIView(frame: CGRect(x: 0, y: 32, width: hudWidth, height: 312))
         
-        // 建議展示框
         let adviceBox = UIView(frame: CGRect(x: 8, y: 8, width: hudWidth - 16, height: 110))
         adviceBox.backgroundColor = UIColor(hex: "#0F172A")
         adviceBox.layer.borderColor = UIColor(hex: "#3B82F6").cgColor
@@ -196,7 +197,6 @@ class ViewController: UIViewController, WKNavigationDelegate, UITextFieldDelegat
         adviceBox.addSubview(tvStatusSub)
         panelAi.addSubview(adviceBox)
         
-        // 費用與餘額框
         let costBox = UIView(frame: CGRect(x: 8, y: 124, width: hudWidth - 16, height: 74))
         costBox.backgroundColor = UIColor(hex: "#080D1A")
         costBox.layer.borderColor = UIColor(hex: "#1E293B").cgColor
@@ -253,7 +253,6 @@ class ViewController: UIViewController, WKNavigationDelegate, UITextFieldDelegat
         costBox.addSubview(statsLine)
         panelAi.addSubview(costBox)
         
-        // 辨識按鈕
         btnScanAi = UIButton(frame: CGRect(x: 8, y: 206, width: hudWidth - 16, height: 38))
         btnScanAi.setTitle("📸 截圖畫面並由 AI 辨識", for: .normal)
         btnScanAi.setTitleColor(.white, for: .normal)
@@ -321,7 +320,6 @@ class ViewController: UIViewController, WKNavigationDelegate, UITextFieldDelegat
                 
                 self.btnScanAi.setTitle("Astra 推演中...", for: .normal)
                 
-                // 等比縮放至 720px 寬度，降低延遲
                 let targetWidth: CGFloat = 720.0
                 let scale = targetWidth / originalImage.size.width
                 let targetHeight = originalImage.size.height * scale
