@@ -1,7 +1,7 @@
 import UIKit
 import WebKit
 
-class ViewController: UIViewController, WKNavigationDelegate, UITextFieldViewNil {
+class ViewController: UIViewController, WKNavigationDelegate, UITextFieldDelegate {
 
     private let workerUrl = "https://openai.zhu90305.workers.dev/"
     
@@ -41,9 +41,18 @@ class ViewController: UIViewController, WKNavigationDelegate, UITextFieldViewNil
         fetchRealBalance()
     }
 
+    // MARK: - 取得狀態列頂部安全距離
+    private func getStatusBarHeight() -> CGFloat {
+        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+           let window = scene.windows.first {
+            return window.safeAreaInsets.top
+        }
+        return 44.0
+    }
+
     // MARK: - 頂部導航列
     private func setupTopBar() {
-        let safeTop = UIApplication.shared.windows.first?.safeAreaInsets.top ?? 44
+        let safeTop = getStatusBarHeight()
         let topBar = UIView(frame: CGRect(x: 0, y: 0, width: view.bounds.width, height: safeTop + 50))
         topBar.backgroundColor = UIColor(hex: "#0F172A")
         
@@ -57,7 +66,7 @@ class ViewController: UIViewController, WKNavigationDelegate, UITextFieldViewNil
         urlTextField.layer.cornerRadius = 6
         urlTextField.leftView = UIView(frame: CGRect(x: 0, y: 0, width: 8, height: 38))
         urlTextField.leftViewMode = .always
-        topBar.addView(urlTextField)
+        topBar.addSubview(urlTextField)
         
         let btnRefresh = UIButton(frame: CGRect(x: view.bounds.width - 134, y: safeTop + 6, width: 70, height: 38))
         btnRefresh.setTitle("重新整理", for: .normal)
@@ -66,7 +75,7 @@ class ViewController: UIViewController, WKNavigationDelegate, UITextFieldViewNil
         btnRefresh.backgroundColor = UIColor(hex: "#334155")
         btnRefresh.layer.cornerRadius = 6
         btnRefresh.addTarget(self, action: #selector(handlePageRefresh), for: .touchUpInside)
-        topBar.addView(btnRefresh)
+        topBar.addSubview(btnRefresh)
         
         let btnGo = UIButton(frame: CGRect(x: view.bounds.width - 58, y: safeTop + 6, width: 48, height: 38))
         btnGo.setTitle("前往", for: .normal)
@@ -75,14 +84,14 @@ class ViewController: UIViewController, WKNavigationDelegate, UITextFieldViewNil
         btnGo.backgroundColor = UIColor(hex: "#2563EB")
         btnGo.layer.cornerRadius = 6
         btnGo.addTarget(self, action: #selector(handlePageGo), for: .touchUpInside)
-        topBar.addView(btnGo)
+        topBar.addSubview(btnGo)
         
         view.addSubview(topBar)
     }
 
     // MARK: - 遊戲 WKWebView
     private func setupWebView() {
-        let safeTop = UIApplication.shared.windows.first?.safeAreaInsets.top ?? 44
+        let safeTop = getStatusBarHeight()
         let config = WKWebViewConfiguration()
         config.allowsInlineMediaPlayback = true
         
@@ -338,7 +347,7 @@ class ViewController: UIViewController, WKNavigationDelegate, UITextFieldViewNil
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.timeoutInterval = 10.0 // 10秒硬性逾時
+        request.timeoutInterval = 10.0
         
         let json: [String: Any] = ["image": base64Image, "user": "default_user"]
         request.httpBody = try? JSONSerialization.data(withJSONObject: json)
