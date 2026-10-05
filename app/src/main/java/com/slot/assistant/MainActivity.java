@@ -1,6 +1,7 @@
 package com.slot.assistant;
 
 import android.annotation.SuppressLint;
+import android.app.AlertDialog;
 import android.content.Intent;
 import android.graphics.Bitmap;
 import android.graphics.Color;
@@ -10,6 +11,7 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.text.InputType;
 import android.util.Base64;
 import android.util.TypedValue;
 import android.view.Gravity;
@@ -25,6 +27,7 @@ import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 
@@ -86,13 +89,12 @@ public class MainActivity extends AppCompatActivity {
         etUrl.setText("https://you888a.com/");
         etUrl.setTextColor(Color.WHITE);
         etUrl.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
-        etUrl.setHint("請輸入或貼上任何遊戲網址...");
+        etUrl.setHint("請輸入遊戲網址...");
         etUrl.setHintTextColor(Color.parseColor("#64748B"));
         etUrl.setBackground(createBoxDrawable(Color.parseColor("#1E293B"), Color.parseColor("#334155"), 6));
         etUrl.setPadding(dp(10), dp(8), dp(10), dp(8));
         etUrl.setSingleLine(true);
-        LinearLayout.LayoutParams etParams = new LinearLayout.LayoutParams(0, dp(38), 1f);
-        topBar.addView(etUrl, etParams);
+        topBar.addView(etUrl, new LinearLayout.LayoutParams(0, dp(38), 1f));
 
         Button btnRefresh = new Button(this);
         btnRefresh.setText("重新整理");
@@ -117,9 +119,8 @@ public class MainActivity extends AppCompatActivity {
         mainLayout.addView(topBar);
 
         webView = new WebView(this);
-        LinearLayout.LayoutParams webParams = new LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f);
-        mainLayout.addView(webView, webParams);
+        mainLayout.addView(webView, new LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f));
 
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -174,7 +175,6 @@ public class MainActivity extends AppCompatActivity {
 
         rootLayout.addView(mainLayout);
 
-        // 原生懸浮面板
         hudLayout = buildNativeHudView(statusBarHeight);
         rootLayout.addView(hudLayout);
 
@@ -195,7 +195,6 @@ public class MainActivity extends AppCompatActivity {
         hudParams.rightMargin = dp(12);
         hud.setLayoutParams(hudParams);
 
-        // 頂部標題列
         LinearLayout header = new LinearLayout(this);
         header.setOrientation(LinearLayout.HORIZONTAL);
         header.setBackground(createBoxDrawable(Color.parseColor("#1E293B"), 0, 10));
@@ -222,7 +221,6 @@ public class MainActivity extends AppCompatActivity {
         final LinearLayout body = new LinearLayout(this);
         body.setOrientation(LinearLayout.VERTICAL);
 
-        // 分頁列
         LinearLayout tabBar = new LinearLayout(this);
         tabBar.setOrientation(LinearLayout.HORIZONTAL);
         tabBar.setBackgroundColor(Color.parseColor("#0F172A"));
@@ -251,7 +249,6 @@ public class MainActivity extends AppCompatActivity {
         panelAi.setOrientation(LinearLayout.VERTICAL);
         panelAi.setPadding(dp(10), dp(8), dp(10), dp(10));
 
-        // 模型標籤
         LinearLayout engineBar = new LinearLayout(this);
         engineBar.setOrientation(LinearLayout.HORIZONTAL);
         engineBar.setGravity(Gravity.CENTER_VERTICAL);
@@ -273,7 +270,6 @@ public class MainActivity extends AppCompatActivity {
 
         panelAi.addView(engineBar);
 
-        // 建議面板
         LinearLayout adviceBox = new LinearLayout(this);
         adviceBox.setOrientation(LinearLayout.VERTICAL);
         adviceBox.setBackground(createBoxDrawable(Color.parseColor("#0F172A"), Color.parseColor("#3B82F6"), 6));
@@ -313,7 +309,6 @@ public class MainActivity extends AppCompatActivity {
 
         panelAi.addView(adviceBox);
 
-        // 費用與真實餘額
         LinearLayout costBox = new LinearLayout(this);
         costBox.setOrientation(LinearLayout.VERTICAL);
         costBox.setBackground(createBoxDrawable(Color.parseColor("#080D1A"), Color.parseColor("#1E293B"), 6));
@@ -338,8 +333,10 @@ public class MainActivity extends AppCompatActivity {
         rowToken.addView(tvCostTag);
         costBox.addView(rowToken);
 
+        // 餘額列：加入即時重新整理刷新圖示 [🔄]
         LinearLayout rowBal = new LinearLayout(this);
         rowBal.setOrientation(LinearLayout.HORIZONTAL);
+        rowBal.setGravity(Gravity.CENTER_VERTICAL);
         rowBal.setPadding(0, dp(4), 0, dp(4));
 
         TextView tvBalLabel = new TextView(this);
@@ -353,7 +350,49 @@ public class MainActivity extends AppCompatActivity {
         tvBalance.setTextColor(Color.parseColor("#22C55E"));
         tvBalance.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
         tvBalance.setTypeface(null, Typeface.BOLD);
-        rowBal.addView(tvBalance, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+        rowBal.addView(tvBalance);
+
+        // 餘額刷新按鈕圖示
+        TextView btnRefreshBal = new TextView(this);
+        btnRefreshBal.setText(" 🔄");
+        btnRefreshBal.setTextSize(TypedValue.COMPLEX_UNIT_SP, 11);
+        btnRefreshBal.setPadding(dp(2), 0, dp(6), 0);
+        btnRefreshBal.setOnClickListener(v -> {
+            tvBalance.setText("更新中...");
+            fetchRealBalance();
+            Toast.makeText(MainActivity.this, "已即時刷新餘額", Toast.LENGTH_SHORT).show();
+        });
+
+        // 長按刷新圖示支援手動輸入最新充值金額
+        btnRefreshBal.setOnLongClickListener(v -> {
+            AlertDialog.Builder builder = new AlertDialog.Builder(MainActivity.this);
+            builder.setTitle("手動校正真實餘額");
+            final EditText input = new EditText(MainActivity.this);
+            input.setHint("輸入儲值金額 (例如: 5.00)");
+            input.setInputType(InputType.TYPE_CLASS_NUMBER | InputType.TYPE_NUMBER_FLAG_DECIMAL);
+            builder.setView(input);
+
+            builder.setPositiveButton("更新", (dialog, which) -> {
+                String newBalStr = input.getText().toString().trim();
+                if (!newBalStr.isEmpty()) {
+                    new Thread(() -> {
+                        try {
+                            URL updateUrl = new URL(CF_WORKER_BALANCE_URL + "?set=" + newBalStr);
+                            HttpURLConnection c = (HttpURLConnection) updateUrl.openConnection();
+                            c.setRequestMethod("GET");
+                            c.getResponseCode();
+                            c.disconnect();
+                            fetchRealBalance();
+                        } catch (Exception ignored) {}
+                    }).start();
+                }
+            });
+            builder.setNegativeButton("取消", null);
+            builder.show();
+            return true;
+        });
+
+        rowBal.addView(btnRefreshBal, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
 
         TextView tvMin = new TextView(this);
         tvMin.setText("(最低需 $0.01)");
@@ -371,7 +410,6 @@ public class MainActivity extends AppCompatActivity {
 
         panelAi.addView(costBox);
 
-        // 推論按鈕
         btnScanAi = new Button(this);
         btnScanAi.setText("📸 截圖畫面並由 AI 辨識");
         btnScanAi.setTextColor(Color.WHITE);
@@ -382,7 +420,6 @@ public class MainActivity extends AppCompatActivity {
 
         body.addView(panelAi);
 
-        // 客服面板
         final LinearLayout panelService = new LinearLayout(this);
         panelService.setOrientation(LinearLayout.VERTICAL);
         panelService.setPadding(dp(10), dp(8), dp(10), dp(10));
@@ -402,7 +439,6 @@ public class MainActivity extends AppCompatActivity {
         btnLine.setText("💬 LINE 客服: @OSC168");
         btnLine.setTextColor(Color.WHITE);
         btnLine.setTextSize(TypedValue.COMPLEX_UNIT_SP, 10);
-        btnLine.setTypeface(null, Typeface.BOLD);
         btnLine.setBackground(createBoxDrawable(Color.parseColor("#16A34A"), 0, 4));
         panelService.addView(btnLine, new LinearLayout.LayoutParams(LinearLayout.LayoutParams.MATCH_PARENT, dp(36)));
 
@@ -423,7 +459,7 @@ public class MainActivity extends AppCompatActivity {
             tabService.setTextColor(Color.parseColor("#38BDF8"));
             tabAi.setTextColor(Color.parseColor("#94A3B8"));
             panelService.setVisibility(View.VISIBLE);
-            panelAi.setVisibility(View.GONE);
+            panelService.setVisibility(View.GONE);
         });
 
         tvCollapse.setOnClickListener(v -> {
@@ -441,12 +477,12 @@ public class MainActivity extends AppCompatActivity {
             hud.requestLayout();
         });
 
-        // 點擊辨識：透過 PixelCopy 截圖並等比縮放
+        // 點擊辨識：透過 PixelCopy 截圖並等比縮放至 720px
         btnScanAi.setOnClickListener(v -> {
             if (currentBalance < 0.0086) {
                 tvStatusMain.setText("餘額不足");
                 tvStatusMain.setTextColor(Color.parseColor("#EF4444"));
-                tvStatusSub.setText("API 餘額低於 $0.01，請充值後使用");
+                tvStatusSub.setText("API 餘額低於 $0.01，請點擊 🔄 刷新或長按儲值");
                 return;
             }
 
@@ -465,26 +501,13 @@ public class MainActivity extends AppCompatActivity {
                     if (copyResult == PixelCopy.SUCCESS) {
                         btnScanAi.setText("Astra 推演中...");
 
-                        // 等比縮放至寬度 720px
+                        // 寬度等比縮放至 720px，降低網路延遲
                         int targetWidth = 720;
                         int targetHeight = (int) (bitmap.getHeight() * (720.0f / bitmap.getWidth()));
                         Bitmap scaledBitmap = Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true);
 
                         ByteArrayOutputStream baos = new ByteArrayOutputStream();
                         scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 70, baos);
-// 將送給 AI 的 720px 圖片直接存入手機暫存區
-try {
-    java.io.File file = new java.io.File(getExternalFilesDir(null), "ai_screenshot.jpg");
-    java.io.FileOutputStream fos = new java.io.FileOutputStream(file);
-    scaledBitmap.compress(Bitmap.CompressFormat.JPEG, 70, fos);
-    fos.close();
-    android.widget.Toast.makeText(this, "截圖已存至: " + file.getAbsolutePath(), android.widget.Toast.LENGTH_LONG).show();
-} catch (Exception e) {
-    e.printStackTrace();
-}
-
-
-                        
                         final String base64Image = Base64.encodeToString(baos.toByteArray(), Base64.NO_WRAP);
 
                         if (scaledBitmap != bitmap) {
@@ -539,8 +562,8 @@ try {
                 conn.setRequestMethod("POST");
                 conn.setRequestProperty("Content-Type", "application/json");
                 conn.setDoOutput(true);
-                conn.setConnectTimeout(30000);
-                conn.setReadTimeout(30000);
+                conn.setConnectTimeout(10000);
+                conn.setReadTimeout(10000);
 
                 JSONObject reqJson = new JSONObject();
                 reqJson.put("image", base64Image);
@@ -569,7 +592,6 @@ try {
                         double bal = resJson.optDouble("balance", currentBalance);
                         currentBalance = bal;
 
-                        // 解析 4 行數據並分區渲染
                         String[] lines = analysis.split("\n");
                         if (lines.length > 0) {
                             String p1 = lines[0].replace("【", "").replace("】", "").trim();
@@ -592,12 +614,22 @@ try {
 
                         if (tvBalance != null) {
                             tvBalance.setText(String.format("$%.4f USD", bal));
+                            tvBalance.setTextColor(bal >= 0.01 ? Color.parseColor("#22C55E") : Color.parseColor("#EF4444"));
                         }
                     } else {
                         String errMsg = resJson.optString("message", "模型推演異常");
                         tvStatusMain.setText("推演失敗");
                         tvStatusMain.setTextColor(Color.parseColor("#EF4444"));
                         tvStatusSub.setText(errMsg);
+
+                        if (resJson.has("balance")) {
+                            double bal = resJson.optDouble("balance", 0.0);
+                            currentBalance = bal;
+                            if (tvBalance != null) {
+                                tvBalance.setText(String.format("$%.4f USD", bal));
+                                tvBalance.setTextColor(Color.parseColor("#EF4444"));
+                            }
+                        }
                     }
                 });
 
@@ -607,7 +639,7 @@ try {
                     btnScanAi.setEnabled(true);
                     tvStatusMain.setText("連線逾時");
                     tvStatusMain.setTextColor(Color.parseColor("#EF4444"));
-                    tvStatusSub.setText("請確認網路或 API 狀態");
+                    tvStatusSub.setText("已達連線限制，請重試");
                 });
             }
         }).start();
@@ -619,8 +651,8 @@ try {
                 URL url = new URL(CF_WORKER_BALANCE_URL);
                 HttpURLConnection conn = (HttpURLConnection) url.openConnection();
                 conn.setRequestMethod("GET");
-                conn.setConnectTimeout(6000);
-                conn.setReadTimeout(6000);
+                conn.setConnectTimeout(5000);
+                conn.setReadTimeout(5000);
 
                 if (conn.getResponseCode() >= 200 && conn.getResponseCode() < 300) {
                     BufferedReader br = new BufferedReader(new InputStreamReader(conn.getInputStream()));
